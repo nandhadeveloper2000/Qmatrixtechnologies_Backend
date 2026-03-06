@@ -1,26 +1,10 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import { env } from "./env";
 
-export const mailer = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: env.NODEMAILER_EMAIL,
-    pass: env.NODEMAILER_PASSWORD,
-  },
-  logger: true,
-  debug: true,
-});
+const resend = new Resend(env.RESEND_API_KEY);
 
 export async function verifyMailer() {
-  try {
-    await mailer.verify();
-    console.log("✅ SMTP ready");
-  } catch (error) {
-    console.error("❌ SMTP verify failed:", error);
-    throw error;
-  }
+  console.log("✅ Resend mailer ready");
 }
 
 export async function sendOtpEmail(to: string, otp: string) {
@@ -38,19 +22,13 @@ export async function sendOtpEmail(to: string, otp: string) {
     </div>
   `;
 
-  try {
-    const info = await mailer.sendMail({
-      from: `"QMTechnologies" <${env.NODEMAILER_EMAIL}>`,
-      to,
-      subject: "Your QMTechnologies OTP",
-      text: `Your QMTechnologies OTP is ${otp}. It expires in 10 minutes.`,
-      html,
-    });
+  const result = await resend.emails.send({
+    from: env.OTP_FROM_EMAIL,
+    to,
+    subject: "Your QMTechnologies OTP",
+    html,
+    text: `Your QMTechnologies OTP is ${otp}. It expires in 10 minutes.`,
+  });
 
-    console.log("✅ OTP email sent:", info.messageId);
-    return info;
-  } catch (error) {
-    console.error("❌ sendOtpEmail failed:", error);
-    throw error;
-  }
+  console.log("✅ OTP email sent:", result);
 }

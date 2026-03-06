@@ -36,8 +36,9 @@ app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use(cookieParser());
 app.use(hpp());
 
-app.get("/health", (_req, res) => res.json({ ok: true }));
-app.use("/api", routes);
+app.get("/", (_req, res) => {
+  res.send("QMTechnologies API running");
+});app.use("/api", routes);
 
 app.use((_req, res) =>
   res.status(404).json({ success: false, message: "Route not found" })
