@@ -9,11 +9,18 @@ export const mailer = nodemailer.createTransport({
     user: env.NODEMAILER_EMAIL,
     pass: env.NODEMAILER_PASSWORD,
   },
+  logger: true,
+  debug: true,
 });
 
 export async function verifyMailer() {
-  await mailer.verify();
-  console.log("✅ SMTP ready");
+  try {
+    await mailer.verify();
+    console.log("✅ SMTP ready");
+  } catch (error) {
+    console.error("❌ SMTP verify failed:", error);
+    throw error;
+  }
 }
 
 export async function sendOtpEmail(to: string, otp: string) {
@@ -31,10 +38,19 @@ export async function sendOtpEmail(to: string, otp: string) {
     </div>
   `;
 
-  await mailer.sendMail({
-    from: `"QMTechnologies" <${env.NODEMAILER_EMAIL}>`,
-    to,
-    subject: "Your QMTechnologies OTP",
-    html,
-  });
+  try {
+    const info = await mailer.sendMail({
+      from: `"QMTechnologies" <${env.NODEMAILER_EMAIL}>`,
+      to,
+      subject: "Your QMTechnologies OTP",
+      text: `Your QMTechnologies OTP is ${otp}. It expires in 10 minutes.`,
+      html,
+    });
+
+    console.log("✅ OTP email sent:", info.messageId);
+    return info;
+  } catch (error) {
+    console.error("❌ sendOtpEmail failed:", error);
+    throw error;
+  }
 }
