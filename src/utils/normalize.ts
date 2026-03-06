@@ -1,0 +1,1 @@
+export const normEmail = (v: any) => String(v ?? "").trim().toLowerCase();
