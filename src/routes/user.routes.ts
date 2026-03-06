@@ -16,19 +16,19 @@ import {
 
 const router = Router();
 
-/** current user */
+/** current logged-in user */
 router.get("/me", requireAuth, getMyProfile);
+router.put("/me", requireAuth, updateProfile);
+router.put("/me/avatar", requireAuth, upload.single("avatar"), uploadAvatar);
+router.delete("/me/avatar", requireAuth, deleteAvatar);
 
-/** admin routes */
+/** admin user management */
 router.get("/", requireAuth, requireRole("ADMIN"), adminListUsers);
 router.post("/", requireAuth, requireRole("ADMIN"), adminCreateUser);
+router.get("/:id", requireAuth, requireRole("ADMIN"), getUserById);
 router.patch("/:id", requireAuth, requireRole("ADMIN"), adminUpdateUser);
 router.delete("/:id", requireAuth, requireRole("ADMIN"), adminDeleteUser);
-
-/** profile routes */
-router.get("/:id", requireAuth, getUserById);
-router.put("/:id", requireAuth, updateProfile);
-router.put("/:id/avatar", requireAuth, upload.single("avatar"), uploadAvatar);
-router.delete("/:id/avatar", requireAuth, deleteAvatar);
+router.put("/:id/avatar", requireAuth, requireRole("ADMIN"), upload.single("avatar"), uploadAvatar);
+router.delete("/:id/avatar", requireAuth, requireRole("ADMIN"), deleteAvatar);
 
 export default router;
