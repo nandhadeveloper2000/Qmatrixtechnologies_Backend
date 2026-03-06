@@ -9,8 +9,8 @@ const router = Router();
 router.post("/", createEnquiry);
 
 // USER
-router.get("/", requireAuth, requireRole("MASTER","USER","EDITOR"), listEnquiries);
-router.patch("/:id", requireAuth, requireRole("MASTER","USER","EDITOR"), updateEnquiry);
-router.delete("/:id", requireAuth, requireRole("MASTER","USER"), deleteEnquiry);
+router.get("/", requireAuth, requireRole("ADMIN","USER","EDITOR"), listEnquiries);
+router.patch("/:id", requireAuth, requireRole("ADMIN","USER","EDITOR"), updateEnquiry);
+router.delete("/:id", requireAuth, requireRole("ADMIN","USER"), deleteEnquiry);
 
 export default router;
