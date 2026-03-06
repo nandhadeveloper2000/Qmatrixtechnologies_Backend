@@ -8,12 +8,9 @@ import { env } from "./config/env";
 
 export const app = express();
 
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://localhost:3001",
-  "http://localhost:5173",
-  env.FRONTEND_URL,
-].filter(Boolean);
+const allowedOrigins = env.FRONTEND_URLS.split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
 
 app.use(helmet());
 
@@ -21,10 +18,16 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
@@ -36,6 +39,6 @@ app.use(hpp());
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.use("/api", routes);
 
-app.use((_req, res) => {
-  res.status(404).json({ success: false, message: "Route not found" });
-});
+app.use((_req, res) =>
+  res.status(404).json({ success: false, message: "Route not found" })
+);

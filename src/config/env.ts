@@ -13,7 +13,7 @@ export const env = {
   PORT: Number(process.env.PORT || 3000),
   MONGODB_URI: required("MONGODB_URI", process.env.MONGODB_URI),
 
-  FRONTEND_URL: required("FRONTEND_URL", process.env.FRONTEND_URL),
+  FRONTEND_URLS: required("FRONTEND_URLS", process.env.FRONTEND_URLS),
   COOKIE_SECURE: process.env.COOKIE_SECURE === "true",
 
   NODEMAILER_EMAIL: required("NODEMAILER_EMAIL", process.env.NODEMAILER_EMAIL),
