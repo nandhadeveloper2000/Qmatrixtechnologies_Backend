@@ -26,7 +26,7 @@ router.delete("/me/avatar", requireAuth, deleteAvatar);
 router.get("/", requireAuth, requireRole("ADMIN"), adminListUsers);
 router.post("/", requireAuth, requireRole("ADMIN"), adminCreateUser);
 router.get("/:id", requireAuth, requireRole("ADMIN"), getUserById);
-router.patch("/:id", requireAuth, requireRole("ADMIN"), adminUpdateUser);
+router.put("/:id", requireAuth, requireRole("ADMIN"), adminUpdateUser);
 router.delete("/:id", requireAuth, requireRole("ADMIN"), adminDeleteUser);
 router.put("/:id/avatar", requireAuth, requireRole("ADMIN"), upload.single("avatar"), uploadAvatar);
 router.delete("/:id/avatar", requireAuth, requireRole("ADMIN"), deleteAvatar);

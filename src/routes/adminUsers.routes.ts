@@ -13,13 +13,13 @@ const r = Router();
 
 r.get("/users", requireAuth, requireRole("ADMIN"), adminListUsers);
 r.get("/admins", requireAuth, requireRole("ADMIN"), adminListAdmins);
-r.patch("/users/:id/active", requireAuth, requireRole("ADMIN"), adminSetActive);
+r.put("/users/:id/active", requireAuth, requireRole("ADMIN"), adminSetActive);
 r.post(
   "/users/:id/force-logout",
   requireAuth,
   requireRole("ADMIN"),
   adminForceLogout
 );
-r.patch("/users/:id/role", requireAuth, requireRole("ADMIN"), adminSetRole);
+r.put("/users/:id/role", requireAuth, requireRole("ADMIN"), adminSetRole);
 
 export default r;
