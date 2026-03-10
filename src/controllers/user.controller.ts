@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { normEmail } from "../utils/normalize";
-import { UserModel, type UserRole } from "../models/User";
+import { UserModel, type UserRole } from "../models/user.model";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { cloudinary } from "../config/cloudinary";
 

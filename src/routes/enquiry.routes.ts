@@ -1,16 +1,17 @@
+// src/routes/enquiry.route.ts
 import { Router } from "express";
-import { requireAuth } from "../middlewares/auth";
-import { requireRole } from "../middlewares/rbac";
-import { createEnquiry, listEnquiries, updateEnquiry, deleteEnquiry } from "../controllers/enquiry.controller";
+import {
+  createEnquiry,
+  listEnquiries,
+  updateEnquiry,
+  deleteEnquiry,
+} from "../controllers/enquiry.controller";
 
 const router = Router();
 
-// Public create (from website form)
 router.post("/", createEnquiry);
-
-// USER
-router.get("/", requireAuth, requireRole("ADMIN","USER","EDITOR"), listEnquiries);
-router.patch("/:id", requireAuth, requireRole("ADMIN","USER","EDITOR"), updateEnquiry);
-router.delete("/:id", requireAuth, requireRole("ADMIN","USER"), deleteEnquiry);
+router.get("/", listEnquiries);
+router.patch("/:id", updateEnquiry);
+router.delete("/:id", deleteEnquiry);
 
 export default router;

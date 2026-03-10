@@ -1,5 +1,5 @@
 // src/services/otp.service.ts
-import { OtpModel } from "../models/Otp";
+import { OtpModel } from "../models/otp.model";
 import { generateOtp } from "../utils/generateOtp";
 import { hashValue, compareValue } from "../utils/hash";
 

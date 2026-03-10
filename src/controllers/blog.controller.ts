@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
-import { BlogModel } from "../models/Blog";
+import { BlogModel } from "../models/blog.model";
 
 function normalizeSlug(value: string) {
-  return value
+  return String(value || "")
     .toLowerCase()
     .trim()
     .replace(/\s+/g, "-")
@@ -10,33 +10,63 @@ function normalizeSlug(value: string) {
     .replace(/-+/g, "-");
 }
 
+function parseArray<T>(value: unknown, fallback: T[] = []): T[] {
+  if (Array.isArray(value)) return value as T[];
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as T[]) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return fallback;
+}
+
+function parseObject<T>(value: unknown, fallback: T): T {
+  if (value === null) return fallback;
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as T;
+  }
+
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as T)
+        : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return fallback;
+}
+
+function toBool(value: unknown, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") return value === "true";
+  return fallback;
+}
+
 export async function createBlog(req: Request, res: Response) {
   try {
-    const {
-      title,
-      slug,
-      excerpt,
-      contentHtml,
-      category,
-      tags,
-      coverImage,
-      authorName,
-      location,
-      readTime,
-      views,
-      faqs,
-      isPublished,
-      publishedAt,
-    } = req.body;
+    const body = req.body ?? {};
 
-    if (!title || !contentHtml) {
+    const title = String(body.title || "").trim();
+    const slugInput = String(body.slug || "").trim();
+
+    if (!title) {
       return res.status(400).json({
         success: false,
-        message: "title and contentHtml are required",
+        message: "title is required",
       });
     }
 
-    const finalSlug = slug ? normalizeSlug(slug) : normalizeSlug(title);
+    const finalSlug = slugInput ? normalizeSlug(slugInput) : normalizeSlug(title);
 
     if (!finalSlug) {
       return res.status(400).json({
@@ -53,21 +83,25 @@ export async function createBlog(req: Request, res: Response) {
       });
     }
 
+    const isPublished = toBool(body.isPublished, false);
+
     const doc = await BlogModel.create({
-      title: title.trim(),
+      title,
       slug: finalSlug,
-      excerpt: excerpt || "",
-      contentHtml,
-      category: category || "General",
-      tags: Array.isArray(tags) ? tags : [],
-      coverImage: coverImage || null,
-      authorName: authorName || "",
-      location: location || "",
-      readTime: Number(readTime) || 5,
-      views: Number(views) || 0,
-      faqs: Array.isArray(faqs) ? faqs : [],
-      isPublished: Boolean(isPublished),
-      publishedAt: isPublished ? publishedAt || new Date() : null,
+      excerpt: String(body.excerpt || "").trim(),
+      introTitle: String(body.introTitle || "").trim(),
+      introDescription: String(body.introDescription || "").trim(),
+      category: String(body.category || "General").trim(),
+      tags: parseArray<string>(body.tags),
+      coverImage: parseObject(body.coverImage, null),
+      authorName: String(body.authorName || "").trim(),
+      location: String(body.location || "").trim(),
+      readTime: Number(body.readTime) || 5,
+      views: Number(body.views) || 0,
+      sections: parseArray(body.sections),
+      faqs: parseArray(body.faqs),
+      isPublished,
+      publishedAt: isPublished ? body.publishedAt || new Date() : null,
       createdBy: req.user!.uid,
     });
 
@@ -87,12 +121,11 @@ export async function createBlog(req: Request, res: Response) {
 export async function listBlogs(req: Request, res: Response) {
   try {
     const publishedOnly = req.query.published === "true";
-
     const filter = publishedOnly ? { isPublished: true } : {};
 
     const items = await BlogModel.find(filter)
       .sort({ publishedAt: -1, createdAt: -1 })
-      .populate("createdBy", "name email");
+      .populate("createdBy", "name email role");
 
     return res.json({
       success: true,
@@ -107,13 +140,11 @@ export async function listBlogs(req: Request, res: Response) {
   }
 }
 
-export async function getBlogBySlug(req: Request, res: Response) {
+export async function getBlogById(req: Request, res: Response) {
   try {
-    const { slug } = req.params;
-
-    const doc = await BlogModel.findOne({ slug }).populate(
+    const doc = await BlogModel.findById(req.params.id).populate(
       "createdBy",
-      "name email"
+      "name email role"
     );
 
     if (!doc) {
@@ -128,7 +159,7 @@ export async function getBlogBySlug(req: Request, res: Response) {
       data: doc,
     });
   } catch (error) {
-    console.error("getBlogBySlug error:", error);
+    console.error("getBlogById error:", error);
     return res.status(500).json({
       success: false,
       message: "Failed to fetch blog",
@@ -138,6 +169,7 @@ export async function getBlogBySlug(req: Request, res: Response) {
 
 export async function updateBlog(req: Request, res: Response) {
   try {
+    const body = req.body ?? {};
     const existing = await BlogModel.findById(req.params.id);
 
     if (!existing) {
@@ -147,10 +179,12 @@ export async function updateBlog(req: Request, res: Response) {
       });
     }
 
-    if (req.body.slug) {
-      const finalSlug = normalizeSlug(req.body.slug);
+    let nextSlug = existing.slug;
 
-      if (!finalSlug) {
+    if (body.slug || body.title) {
+      nextSlug = normalizeSlug(body.slug || body.title || existing.title);
+
+      if (!nextSlug) {
         return res.status(400).json({
           success: false,
           message: "Valid slug is required",
@@ -158,7 +192,7 @@ export async function updateBlog(req: Request, res: Response) {
       }
 
       const slugExists = await BlogModel.findOne({
-        slug: finalSlug,
+        slug: nextSlug,
         _id: { $ne: req.params.id },
       });
 
@@ -168,22 +202,54 @@ export async function updateBlog(req: Request, res: Response) {
           message: "Slug already exists",
         });
       }
-
-      req.body.slug = finalSlug;
     }
 
-    if (
-      req.body.isPublished === true &&
-      !req.body.publishedAt &&
-      !existing.publishedAt
-    ) {
-      req.body.publishedAt = new Date();
+    const nextIsPublished = toBool(body.isPublished, existing.isPublished);
+
+    const payload: Record<string, any> = {
+      ...(body.title !== undefined ? { title: String(body.title).trim() } : {}),
+      slug: nextSlug,
+      ...(body.excerpt !== undefined ? { excerpt: String(body.excerpt).trim() } : {}),
+      ...(body.introTitle !== undefined
+        ? { introTitle: String(body.introTitle).trim() }
+        : {}),
+      ...(body.introDescription !== undefined
+        ? { introDescription: String(body.introDescription).trim() }
+        : {}),
+      ...(body.category !== undefined
+        ? { category: String(body.category).trim() }
+        : {}),
+      ...(body.tags !== undefined ? { tags: parseArray<string>(body.tags) } : {}),
+      ...(body.coverImage !== undefined
+        ? { coverImage: parseObject(body.coverImage, null) }
+        : {}),
+      ...(body.authorName !== undefined
+        ? { authorName: String(body.authorName).trim() }
+        : {}),
+      ...(body.location !== undefined
+        ? { location: String(body.location).trim() }
+        : {}),
+      ...(body.readTime !== undefined
+        ? { readTime: Number(body.readTime) || 5 }
+        : {}),
+      ...(body.views !== undefined ? { views: Number(body.views) || 0 } : {}),
+      ...(body.sections !== undefined ? { sections: parseArray(body.sections) } : {}),
+      ...(body.faqs !== undefined ? { faqs: parseArray(body.faqs) } : {}),
+      isPublished: nextIsPublished,
+    };
+
+    if (nextIsPublished && !existing.publishedAt) {
+      payload.publishedAt = new Date();
     }
 
-    const doc = await BlogModel.findByIdAndUpdate(req.params.id, req.body, {
+    if (!nextIsPublished) {
+      payload.publishedAt = null;
+    }
+
+    const doc = await BlogModel.findByIdAndUpdate(req.params.id, payload, {
       new: true,
       runValidators: true,
-    });
+    }).populate("createdBy", "name email role");
 
     return res.json({
       success: true,
@@ -218,6 +284,52 @@ export async function deleteBlog(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       message: "Failed to delete blog",
+    });
+  }
+}
+
+export async function listPublishedBlogs(req: Request, res: Response) {
+  try {
+    const blogs = await BlogModel.find({ isPublished: true })
+      .sort({ publishedAt: -1, createdAt: -1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: blogs,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch published blogs",
+    });
+  }
+}
+
+export async function getBlogBySlug(req: Request, res: Response) {
+  try {
+    const { slug } = req.params;
+
+    const blog = await BlogModel.findOne({
+      slug,
+      isPublished: true,
+    }).lean();
+
+    if (!blog) {
+      return res.status(404).json({
+        success: false,
+        message: "Blog not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: blog,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Failed to fetch blog",
     });
   }
 }

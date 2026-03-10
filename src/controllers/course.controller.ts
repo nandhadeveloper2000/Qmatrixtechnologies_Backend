@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { Readable } from "stream";
-import { CourseModel } from "../models/Course";
+import { CourseModel } from "../models/course.model";
 import { cloudinary } from "../config/cloudinary";
 import { normalizeSlug } from "../utils/slug";
 
@@ -12,18 +12,20 @@ function toBool(value: unknown, fallback = false) {
 
 function parseArray<T>(value: unknown, fallback: T[] = []): T[] {
   if (Array.isArray(value)) return value as T[];
+
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      return Array.isArray(parsed) ? parsed : fallback;
+      return Array.isArray(parsed) ? (parsed as T[]) : fallback;
     } catch {
       return fallback;
     }
   }
+
   return fallback;
 }
 
-function parseObject<T extends object>(value: unknown, fallback: T): T {
+function parseObject<T>(value: unknown, fallback: T): T {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as T;
   }
@@ -44,7 +46,7 @@ function parseObject<T extends object>(value: unknown, fallback: T): T {
 
 function uploadBufferToCloudinary(
   fileBuffer: Buffer,
-  folder = "qmatrix/courses"
+  folder = "qmatrix/Courses"
 ): Promise<{ secure_url: string; public_id: string }> {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -66,9 +68,6 @@ function uploadBufferToCloudinary(
   });
 }
 
-/* =========================
-   IMAGE UPLOAD
-========================= */
 export async function uploadCourseImage(req: Request, res: Response) {
   try {
     if (!req.file) {
@@ -97,9 +96,6 @@ export async function uploadCourseImage(req: Request, res: Response) {
   }
 }
 
-/* =========================
-   IMAGE DELETE
-========================= */
 export async function deleteCourseImage(req: Request, res: Response) {
   try {
     const { public_id } = req.body;
@@ -128,13 +124,12 @@ export async function deleteCourseImage(req: Request, res: Response) {
   }
 }
 
-/* =========================
-   CREATE COURSE
-========================= */
 export async function createCourse(req: Request, res: Response) {
   try {
-    const title = String(req.body.title || "").trim();
-    const slugInput = String(req.body.slug || "").trim();
+    const body = req.body ?? {};
+
+    const title = String(body.title || "").trim();
+    const slugInput = String(body.slug || "").trim();
 
     if (!title) {
       return res.status(400).json({
@@ -160,44 +155,44 @@ export async function createCourse(req: Request, res: Response) {
       });
     }
 
+    const isPublished = toBool(body.isPublished, false);
+
     const doc = await CourseModel.create({
       title,
       slug: finalSlug,
-      category: req.body.category || "New One",
+      category: body.category || "New One",
 
-      shortDesc: req.body.shortDesc || "",
-      description: req.body.description || "",
-      overview: req.body.overview || "",
+      shortDesc: String(body.shortDesc || "").trim(),
+      description: String(body.description || "").trim(),
+      overview: String(body.overview || "").trim(),
 
-      coverImage: parseObject(req.body.coverImage, null as any),
-      galleryImages: parseArray(req.body.galleryImages),
+      coverImage: parseObject(body.coverImage, null as any),
+      galleryImages: parseArray(body.galleryImages),
 
-      duration: req.body.duration || "",
-      modulesCount: req.body.modulesCount || "",
-      rating: Number(req.body.rating) || 0,
+      duration: String(body.duration || "").trim(),
+      modulesCount: String(body.modulesCount || "").trim(),
+      rating: Number(body.rating) || 0,
 
-      sessionDuration: req.body.sessionDuration || "",
-      classSchedule: req.body.classSchedule || "",
-      mode: req.body.mode || "Online/Offline",
-      enrolled: req.body.enrolled || "",
-      batchSize: req.body.batchSize || "",
+      sessionDuration: String(body.sessionDuration || "").trim(),
+      classSchedule: String(body.classSchedule || "").trim(),
+      mode: body.mode || "Online/Offline",
+      enrolled: String(body.enrolled || "").trim(),
+      batchSize: String(body.batchSize || "").trim(),
       admissionFee:
-        req.body.admissionFee === "" || req.body.admissionFee == null
+        body.admissionFee === "" || body.admissionFee == null
           ? null
-          : Number(req.body.admissionFee),
-      placementSupport: toBool(req.body.placementSupport, true),
+          : Number(body.admissionFee),
+      placementSupport: toBool(body.placementSupport, true),
 
-      features: parseArray<string>(req.body.features),
-      support: parseArray<string>(req.body.support),
-      curriculum: parseArray(req.body.curriculum),
-      trainers: parseArray(req.body.trainers),
-      reviews: parseArray(req.body.reviews),
+      features: parseArray<string>(body.features),
+      support: parseArray<string>(body.support),
+      curriculum: parseArray(body.curriculum),
+      trainers: parseArray(body.trainers),
+      reviews: parseArray(body.reviews),
 
-      seo: parseObject(req.body.seo, {}),
-
-      isFeatured: toBool(req.body.isFeatured, false),
-      isPublished: toBool(req.body.isPublished, false),
-      publishedAt: toBool(req.body.isPublished, false) ? new Date() : null,
+      isFeatured: toBool(body.isFeatured, false),
+      isPublished,
+      publishedAt: isPublished ? new Date() : null,
 
       createdBy: req.user?.uid || null,
       updatedBy: req.user?.uid || null,
@@ -216,15 +211,12 @@ export async function createCourse(req: Request, res: Response) {
   }
 }
 
-/* =========================
-   ADMIN LIST
-========================= */
 export async function adminListCourses(req: Request, res: Response) {
   try {
     const items = await CourseModel.find()
       .sort({ createdAt: -1 })
-      .populate("createdBy", "name email")
-      .populate("updatedBy", "name email");
+      .populate("createdBy", "name email role")
+      .populate("updatedBy", "name email role");
 
     return res.json({
       success: true,
@@ -239,9 +231,6 @@ export async function adminListCourses(req: Request, res: Response) {
   }
 }
 
-/* =========================
-   PUBLIC LIST
-========================= */
 export async function listPublishedCourses(req: Request, res: Response) {
   try {
     const category = String(req.query.category || "").trim();
@@ -256,7 +245,7 @@ export async function listPublishedCourses(req: Request, res: Response) {
 
     const items = await CourseModel.find(filter)
       .select(
-        "title slug category shortDesc coverImage duration modulesCount rating isFeatured createdAt"
+        "title slug category shortDesc coverImage duration modulesCount rating isFeatured createdAt publishedAt updatedAt"
       )
       .sort({ publishedAt: -1, createdAt: -1 });
 
@@ -273,14 +262,11 @@ export async function listPublishedCourses(req: Request, res: Response) {
   }
 }
 
-/* =========================
-   GET COURSE BY ID (ADMIN)
-========================= */
 export async function adminGetCourseById(req: Request, res: Response) {
   try {
     const doc = await CourseModel.findById(req.params.id)
-      .populate("createdBy", "name email")
-      .populate("updatedBy", "name email");
+      .populate("createdBy", "name email role")
+      .populate("updatedBy", "name email role");
 
     if (!doc) {
       return res.status(404).json({
@@ -302,15 +288,12 @@ export async function adminGetCourseById(req: Request, res: Response) {
   }
 }
 
-/* =========================
-   GET COURSE BY SLUG (PUBLIC)
-========================= */
 export async function getPublishedCourseBySlug(req: Request, res: Response) {
   try {
     const doc = await CourseModel.findOne({
       slug: req.params.slug,
       isPublished: true,
-    });
+    }).lean();
 
     if (!doc) {
       return res.status(404).json({
@@ -332,11 +315,10 @@ export async function getPublishedCourseBySlug(req: Request, res: Response) {
   }
 }
 
-/* =========================
-   UPDATE COURSE
-========================= */
 export async function updateCourse(req: Request, res: Response) {
   try {
+    const body = req.body ?? {};
+
     const existing = await CourseModel.findById(req.params.id);
 
     if (!existing) {
@@ -348,8 +330,15 @@ export async function updateCourse(req: Request, res: Response) {
 
     let nextSlug = existing.slug;
 
-    if (req.body.slug || req.body.title) {
-      nextSlug = normalizeSlug(req.body.slug || req.body.title || existing.title);
+    if (body.slug || body.title) {
+      nextSlug = normalizeSlug(body.slug || body.title || existing.title);
+
+      if (!nextSlug) {
+        return res.status(400).json({
+          success: false,
+          message: "valid slug is required",
+        });
+      }
 
       const slugExists = await CourseModel.findOne({
         slug: nextSlug,
@@ -364,70 +353,82 @@ export async function updateCourse(req: Request, res: Response) {
       }
     }
 
-    const nextIsPublished = toBool(req.body.isPublished, existing.isPublished);
+    const nextIsPublished = toBool(body.isPublished, existing.isPublished);
 
     const payload: Record<string, any> = {
-      ...(req.body.title !== undefined ? { title: String(req.body.title).trim() } : {}),
+      ...(body.title !== undefined ? { title: String(body.title).trim() } : {}),
       slug: nextSlug,
 
-      ...(req.body.category !== undefined ? { category: req.body.category } : {}),
-      ...(req.body.shortDesc !== undefined ? { shortDesc: req.body.shortDesc } : {}),
-      ...(req.body.description !== undefined ? { description: req.body.description } : {}),
-      ...(req.body.overview !== undefined ? { overview: req.body.overview } : {}),
+      ...(body.category !== undefined ? { category: body.category } : {}),
+      ...(body.shortDesc !== undefined
+        ? { shortDesc: String(body.shortDesc).trim() }
+        : {}),
+      ...(body.description !== undefined
+        ? { description: String(body.description).trim() }
+        : {}),
+      ...(body.overview !== undefined
+        ? { overview: String(body.overview).trim() }
+        : {}),
 
-      ...(req.body.coverImage !== undefined
-        ? { coverImage: parseObject(req.body.coverImage, null as any) }
+      ...(body.coverImage !== undefined
+        ? { coverImage: parseObject(body.coverImage, null as any) }
         : {}),
-      ...(req.body.galleryImages !== undefined
-        ? { galleryImages: parseArray(req.body.galleryImages) }
+      ...(body.galleryImages !== undefined
+        ? { galleryImages: parseArray(body.galleryImages) }
         : {}),
 
-      ...(req.body.duration !== undefined ? { duration: req.body.duration } : {}),
-      ...(req.body.modulesCount !== undefined ? { modulesCount: req.body.modulesCount } : {}),
-      ...(req.body.rating !== undefined ? { rating: Number(req.body.rating) || 0 } : {}),
+      ...(body.duration !== undefined
+        ? { duration: String(body.duration).trim() }
+        : {}),
+      ...(body.modulesCount !== undefined
+        ? { modulesCount: String(body.modulesCount).trim() }
+        : {}),
+      ...(body.rating !== undefined ? { rating: Number(body.rating) || 0 } : {}),
 
-      ...(req.body.sessionDuration !== undefined
-        ? { sessionDuration: req.body.sessionDuration }
+      ...(body.sessionDuration !== undefined
+        ? { sessionDuration: String(body.sessionDuration).trim() }
         : {}),
-      ...(req.body.classSchedule !== undefined
-        ? { classSchedule: req.body.classSchedule }
+      ...(body.classSchedule !== undefined
+        ? { classSchedule: String(body.classSchedule).trim() }
         : {}),
-      ...(req.body.mode !== undefined ? { mode: req.body.mode } : {}),
-      ...(req.body.enrolled !== undefined ? { enrolled: req.body.enrolled } : {}),
-      ...(req.body.batchSize !== undefined ? { batchSize: req.body.batchSize } : {}),
-      ...(req.body.admissionFee !== undefined
+      ...(body.mode !== undefined ? { mode: body.mode } : {}),
+      ...(body.enrolled !== undefined
+        ? { enrolled: String(body.enrolled).trim() }
+        : {}),
+      ...(body.batchSize !== undefined
+        ? { batchSize: String(body.batchSize).trim() }
+        : {}),
+      ...(body.admissionFee !== undefined
         ? {
             admissionFee:
-              req.body.admissionFee === "" || req.body.admissionFee == null
+              body.admissionFee === "" || body.admissionFee == null
                 ? null
-                : Number(req.body.admissionFee),
+                : Number(body.admissionFee),
           }
         : {}),
-      ...(req.body.placementSupport !== undefined
-        ? { placementSupport: toBool(req.body.placementSupport, true) }
+      ...(body.placementSupport !== undefined
+        ? { placementSupport: toBool(body.placementSupport, true) }
         : {}),
 
-      ...(req.body.features !== undefined
-        ? { features: parseArray<string>(req.body.features) }
+      ...(body.features !== undefined
+        ? { features: parseArray<string>(body.features) }
         : {}),
-      ...(req.body.support !== undefined
-        ? { support: parseArray<string>(req.body.support) }
+      ...(body.support !== undefined
+        ? { support: parseArray<string>(body.support) }
         : {}),
-      ...(req.body.curriculum !== undefined
-        ? { curriculum: parseArray(req.body.curriculum) }
+      ...(body.curriculum !== undefined
+        ? { curriculum: parseArray(body.curriculum) }
         : {}),
-      ...(req.body.trainers !== undefined
-        ? { trainers: parseArray(req.body.trainers) }
+      ...(body.trainers !== undefined
+        ? { trainers: parseArray(body.trainers) }
         : {}),
-      ...(req.body.reviews !== undefined
-        ? { reviews: parseArray(req.body.reviews) }
+      ...(body.reviews !== undefined
+        ? { reviews: parseArray(body.reviews) }
+        : {}),
+      ...(body.isFeatured !== undefined
+        ? { isFeatured: toBool(body.isFeatured, false) }
         : {}),
 
-      ...(req.body.seo !== undefined ? { seo: parseObject(req.body.seo, {}) } : {}),
-
-      ...(req.body.isFeatured !== undefined
-        ? { isFeatured: toBool(req.body.isFeatured, false) }
-        : {}),
       isPublished: nextIsPublished,
       updatedBy: req.user?.uid || null,
     };
@@ -458,9 +459,6 @@ export async function updateCourse(req: Request, res: Response) {
   }
 }
 
-/* =========================
-   DELETE COURSE
-========================= */
 export async function deleteCourse(req: Request, res: Response) {
   try {
     const doc = await CourseModel.findByIdAndDelete(req.params.id);

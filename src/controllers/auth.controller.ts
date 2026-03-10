@@ -1,8 +1,8 @@
 import { Request, Response } from "express";
 import { env } from "../config/env";
 import { sendOtpEmail } from "../config/mailer";
-import { UserModel } from "../models/User";
-import { OtpModel } from "../models/Otp";
+import { UserModel } from "../models/user.model";
+import { OtpModel } from "../models/otp.model";
 import { normEmail } from "../utils/normalize";
 import { compareValue, hashValue } from "../utils/hash";
 import {
