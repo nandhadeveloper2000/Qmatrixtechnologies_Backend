@@ -1,176 +1,220 @@
-// src/controllers/admin/users.controller.ts
 import { Request, Response } from "express";
-import { db } from "../config/db";
 import { isMasterAdminEmail, isMasterAdminUser } from "../utils/admin";
-import { mapUserRow, type UserRow, type UserRole } from "../models/user.model";
+import { UserModel } from "../models/user.model";
 
-function toInt(v: any, def: number) {
+type UserRole = "USER" | "ADMIN";
+
+function toInt(v: unknown, def: number) {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : def;
 }
 
-function likeQ(v: any) {
-  const s = String(v ?? "").trim();
-  return s ? `%${s}%` : "%";
+function buildSearchFilter(q: string, onlyAdmins = false) {
+  const query = q.trim();
+
+  const filter: Record<string, any> = {};
+
+  if (onlyAdmins) {
+    filter.role = "ADMIN";
+  }
+
+  if (query) {
+    filter.$or = [
+      { email: { $regex: query, $options: "i" } },
+      { name: { $regex: query, $options: "i" } },
+    ];
+  }
+
+  return filter;
 }
 
 /**
  * GET /api/admin/users?q=&page=1&limit=20
- * Lists ALL users (USER + ADMIN)
+ * Lists all users
  */
 export async function adminListUsers(req: Request, res: Response) {
   try {
     const q = String(req.query.q ?? "").trim();
     const page = toInt(req.query.page, 1);
     const limit = Math.min(toInt(req.query.limit, 20), 100);
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
-    const like = likeQ(q);
+    const filter = buildSearchFilter(q, false);
 
-    const [countRows] = await db.query<any[]>(
-      `SELECT COUNT(*) AS total
-       FROM users
-       WHERE (email LIKE ? OR name LIKE ?)`,
-      [like, like]
-    );
-    const total = Number(countRows?.[0]?.total ?? 0);
-
-    const [rows] = await db.query<UserRow[]>(
-      `SELECT id, email, name, role, is_active, token_version, created_at, updated_at
-       FROM users
-       WHERE (email LIKE ? OR name LIKE ?)
-       ORDER BY id DESC
-       LIMIT ? OFFSET ?`,
-      [like, like, limit, offset]
-    );
+    const [items, total] = await Promise.all([
+      UserModel.find(filter)
+        .select("-password -refresh_token_hash -otp -otpExpiry")
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      UserModel.countDocuments(filter),
+    ]);
 
     return res.json({
       success: true,
-      data: { page, limit, total, items: rows.map(mapUserRow) },
+      data: {
+        page,
+        limit,
+        total,
+        items,
+      },
     });
   } catch (err: any) {
     console.error("adminListUsers error:", err);
-    return res.status(500).json({ success: false, message: err?.message || "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Server error",
+    });
   }
 }
 
 /**
  * GET /api/admin/admins?q=&page=1&limit=20
- * Lists ONLY admins
+ * Lists only admins
  */
 export async function adminListAdmins(req: Request, res: Response) {
   try {
     const q = String(req.query.q ?? "").trim();
     const page = toInt(req.query.page, 1);
     const limit = Math.min(toInt(req.query.limit, 20), 100);
-    const offset = (page - 1) * limit;
+    const skip = (page - 1) * limit;
 
-    const like = likeQ(q);
+    const filter = buildSearchFilter(q, true);
 
-    const [countRows] = await db.query<any[]>(
-      `SELECT COUNT(*) AS total
-       FROM users
-       WHERE role='ADMIN' AND (email LIKE ? OR name LIKE ?)`,
-      [like, like]
-    );
-    const total = Number(countRows?.[0]?.total ?? 0);
-
-    const [rows] = await db.query<UserRow[]>(
-      `SELECT id, email, name, role, is_active, token_version, created_at, updated_at
-       FROM users
-       WHERE role='ADMIN' AND (email LIKE ? OR name LIKE ?)
-       ORDER BY id DESC
-       LIMIT ? OFFSET ?`,
-      [like, like, limit, offset]
-    );
+    const [items, total] = await Promise.all([
+      UserModel.find(filter)
+        .select("-password -refresh_token_hash -otp -otpExpiry")
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      UserModel.countDocuments(filter),
+    ]);
 
     return res.json({
       success: true,
-      data: { page, limit, total, items: rows.map(mapUserRow) },
+      data: {
+        page,
+        limit,
+        total,
+        items,
+      },
     });
   } catch (err: any) {
     console.error("adminListAdmins error:", err);
-    return res.status(500).json({ success: false, message: err?.message || "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Server error",
+    });
   }
 }
 
 /**
  * PATCH /api/admin/users/:id/active
  * Body: { isActive: boolean }
- * Deactivate/activate USER or ADMIN (with "last active admin" guard)
  */
 export async function adminSetActive(req: Request, res: Response) {
   try {
     const id = String(req.params.id || "").trim();
-    const isActive = !!req.body?.isActive;
+    const isActive = req.body?.isActive === true;
 
-    const [rows] = await db.query<any[]>(
-      `SELECT id, email, role, is_active FROM users WHERE id=? LIMIT 1`,
-      [id]
-    );
-    const target = rows?.[0];
-    if (!target) return res.status(404).json({ success: false, message: "User not found" });
+    const target = await UserModel.findById(id).lean();
 
-    // Prevent disabling a master admin (strong protection)
-    if (!isActive && target.role === "ADMIN" && isMasterAdminEmail(target.email)) {
-      return res.status(403).json({ success: false, message: "Cannot deactivate master admin" });
+    if (!target) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    // Prevent disabling the last active admin
-    if (!isActive && target.role === "ADMIN" && Number(target.is_active) === 1) {
-      const [crows] = await db.query<any[]>(
-        `SELECT COUNT(*) AS cnt FROM users WHERE role='ADMIN' AND is_active=1`,
-        []
-      );
-      const activeAdmins = Number(crows?.[0]?.cnt ?? 0);
+    const targetRole = String(target.role || "").toUpperCase();
+    const targetEmail = String(target.email || "");
+    const currentlyActive = target.is_active === true;
+
+    if (!isActive && targetRole === "ADMIN" && isMasterAdminEmail(targetEmail)) {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot deactivate master admin",
+      });
+    }
+
+    if (!isActive && targetRole === "ADMIN" && currentlyActive) {
+      const activeAdmins = await UserModel.countDocuments({
+        role: "ADMIN",
+        is_active: true,
+      });
+
       if (activeAdmins <= 1) {
-        return res
-          .status(409)
-          .json({ success: false, message: "Cannot deactivate the last active admin" });
+        return res.status(409).json({
+          success: false,
+          message: "Cannot deactivate the last active admin",
+        });
       }
     }
 
-    await db.query(`UPDATE users SET is_active=? WHERE id=?`, [isActive ? 1 : 0, id]);
+    await UserModel.findByIdAndUpdate(id, {
+      $set: {
+        is_active: isActive,
+      },
+    });
 
-    return res.json({ success: true, message: isActive ? "Activated" : "Deactivated" });
+    return res.json({
+      success: true,
+      message: isActive ? "Activated" : "Deactivated",
+    });
   } catch (err: any) {
     console.error("adminSetActive error:", err);
-    return res.status(500).json({ success: false, message: err?.message || "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Server error",
+    });
   }
 }
 
 /**
  * POST /api/admin/users/:id/force-logout
- * Force logout: increments token_version + clears refresh hash
  */
 export async function adminForceLogout(req: Request, res: Response) {
   try {
     const id = String(req.params.id || "").trim();
 
-    const [rows] = await db.query<any[]>(
-      `SELECT id, email, role FROM users WHERE id=? LIMIT 1`,
-      [id]
-    );
-    const target = rows?.[0];
-    if (!target) return res.status(404).json({ success: false, message: "User not found" });
+    const target = await UserModel.findById(id).lean();
 
-    // Optional: protect master admins from forced logout
-    if (target.role === "ADMIN" && isMasterAdminEmail(target.email)) {
-      return res.status(403).json({ success: false, message: "Cannot force logout master admin" });
+    if (!target) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    await db.query(
-      `UPDATE users
-       SET token_version = token_version + 1,
-           refresh_token_hash = NULL
-       WHERE id=?`,
-      [id]
-    );
+    const targetRole = String(target.role || "").toUpperCase();
+    const targetEmail = String(target.email || "");
 
-    return res.json({ success: true, message: "Forced logout applied" });
+    if (targetRole === "ADMIN" && isMasterAdminEmail(targetEmail)) {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot force logout master admin",
+      });
+    }
+
+    await UserModel.findByIdAndUpdate(id, {
+      $inc: { token_version: 1 },
+      $set: {
+        refresh_token_hash: null,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: "Forced logout applied",
+    });
   } catch (err: any) {
     console.error("adminForceLogout error:", err);
-    return res.status(500).json({ success: false, message: err?.message || "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Server error",
+    });
   }
 }
 
@@ -184,56 +228,76 @@ export async function adminSetRole(req: Request, res: Response) {
     const newRole = String(req.body?.role || "").trim().toUpperCase() as UserRole;
 
     if (newRole !== "USER" && newRole !== "ADMIN") {
-      return res.status(400).json({ success: false, message: "Role must be USER or ADMIN" });
+      return res.status(400).json({
+        success: false,
+        message: "Role must be USER or ADMIN",
+      });
     }
 
-    // Strict: only master admins can change roles
-    if (!isMasterAdminUser(req.user)) {
-      return res.status(403).json({ success: false, message: "Only master admin can change roles" });
+    if (!isMasterAdminUser((req as any).user)) {
+      return res.status(403).json({
+        success: false,
+        message: "Only master admin can change roles",
+      });
     }
 
-    const [rows] = await db.query<any[]>(
-      `SELECT id, email, role, is_active FROM users WHERE id=? LIMIT 1`,
-      [id]
-    );
-    const target = rows?.[0];
-    if (!target) return res.status(404).json({ success: false, message: "User not found" });
+    const target = await UserModel.findById(id).lean();
 
-    const currentRole = String(target.role).toUpperCase() as UserRole;
-
-    // Prevent downgrading master admin emails
-    if (currentRole === "ADMIN" && newRole === "USER" && isMasterAdminEmail(target.email)) {
-      return res.status(403).json({ success: false, message: "Cannot downgrade master admin" });
+    if (!target) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    // Prevent downgrading the last active admin
-    if (currentRole === "ADMIN" && newRole === "USER" && Number(target.is_active) === 1) {
-      const [crows] = await db.query<any[]>(
-        `SELECT COUNT(*) AS cnt FROM users WHERE role='ADMIN' AND is_active=1`,
-        []
-      );
-      const activeAdmins = Number(crows?.[0]?.cnt ?? 0);
+    const currentRole = String(target.role || "").toUpperCase() as UserRole;
+    const targetEmail = String(target.email || "");
+    const currentlyActive = target.is_active === true;
+
+    if (
+      currentRole === "ADMIN" &&
+      newRole === "USER" &&
+      isMasterAdminEmail(targetEmail)
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot downgrade master admin",
+      });
+    }
+
+    if (currentRole === "ADMIN" && newRole === "USER" && currentlyActive) {
+      const activeAdmins = await UserModel.countDocuments({
+        role: "ADMIN",
+        is_active: true,
+      });
+
       if (activeAdmins <= 1) {
-        return res
-          .status(409)
-          .json({ success: false, message: "Cannot downgrade the last active admin" });
+        return res.status(409).json({
+          success: false,
+          message: "Cannot downgrade the last active admin",
+        });
       }
     }
 
-    await db.query(`UPDATE users SET role=? WHERE id=?`, [newRole, id]);
+    await UserModel.findByIdAndUpdate(id, {
+      $set: {
+        role: newRole,
+        refresh_token_hash: null,
+      },
+      $inc: {
+        token_version: 1,
+      },
+    });
 
-    // Force logout after role change (permissions update immediately)
-    await db.query(
-      `UPDATE users
-       SET token_version = token_version + 1,
-           refresh_token_hash = NULL
-       WHERE id=?`,
-      [id]
-    );
-
-    return res.json({ success: true, message: `Role updated to ${newRole} and user logged out` });
+    return res.json({
+      success: true,
+      message: `Role updated to ${newRole} and user logged out`,
+    });
   } catch (err: any) {
     console.error("adminSetRole error:", err);
-    return res.status(500).json({ success: false, message: err?.message || "Server error" });
+    return res.status(500).json({
+      success: false,
+      message: err?.message || "Server error",
+    });
   }
 }

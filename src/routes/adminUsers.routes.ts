@@ -1,4 +1,3 @@
-// src/routes/admin.routes.ts
 import { Router } from "express";
 import {
   adminListUsers,
@@ -7,14 +6,20 @@ import {
   adminForceLogout,
   adminSetRole,
 } from "../controllers/adminUsers.controller";
-import { requireAuth, requireAdmin } from "../middlewares/auth";
+import { requireAuth } from "../middlewares/auth";
+import { requireRole } from "../middlewares/rbac";
 
 const r = Router();
 
-r.get("/users", requireAuth, requireAdmin, adminListUsers);
-r.get("/admins", requireAuth, requireAdmin, adminListAdmins);
-r.patch("/users/:id/active", requireAuth, requireAdmin, adminSetActive);
-r.post("/users/:id/force-logout", requireAuth, requireAdmin, adminForceLogout);
-r.patch("/users/:id/role", requireAuth, requireAdmin, adminSetRole);
+r.get("/users", requireAuth, requireRole("ADMIN"), adminListUsers);
+r.get("/admins", requireAuth, requireRole("ADMIN"), adminListAdmins);
+r.patch("/users/:id/active", requireAuth, requireRole("ADMIN"), adminSetActive);
+r.post(
+  "/users/:id/force-logout",
+  requireAuth,
+  requireRole("ADMIN"),
+  adminForceLogout
+);
+r.patch("/users/:id/role", requireAuth, requireRole("ADMIN"), adminSetRole);
 
 export default r;

@@ -41,10 +41,11 @@ function normalizePageSeoPayload(
 ========================= */
 export async function getPageSEOByKey(req: Request, res: Response) {
   try {
-    const { pageKey } = req.params;
+    const rawPageKey = req.params.pageKey;
+    const pageKey = Array.isArray(rawPageKey) ? rawPageKey[0] : rawPageKey ?? "";
 
     const seo = await PageSEO.findOne({
-      pageKey: String(pageKey || "").trim().toLowerCase(),
+      pageKey: String(pageKey).trim().toLowerCase(),
     }).lean();
 
     if (!seo) {
@@ -72,7 +73,8 @@ export async function getPageSEOByKey(req: Request, res: Response) {
 ========================= */
 export async function upsertPageSEO(req: Request, res: Response) {
   try {
-    const { pageKey } = req.params;
+    const rawPageKey = req.params.pageKey;
+    const pageKey = Array.isArray(rawPageKey) ? rawPageKey[0] : rawPageKey ?? "";
 
     const payload = normalizePageSeoPayload(req.body ?? {}, pageKey);
 
@@ -154,10 +156,11 @@ export async function listPageSEO(_req: Request, res: Response) {
 ========================= */
 export async function deletePageSEO(req: Request, res: Response) {
   try {
-    const { pageKey } = req.params;
+    const rawPageKey = req.params.pageKey;
+    const pageKey = Array.isArray(rawPageKey) ? rawPageKey[0] : rawPageKey ?? "";
 
     const doc = await PageSEO.findOneAndDelete({
-      pageKey: String(pageKey || "").trim().toLowerCase(),
+      pageKey: String(pageKey).trim().toLowerCase(),
     });
 
     if (!doc) {
