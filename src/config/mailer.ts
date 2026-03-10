@@ -4,6 +4,14 @@ import { env } from "./env";
 const resend = new Resend(env.RESEND_API_KEY);
 
 export async function verifyMailer() {
+  if (!env.RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY is missing");
+  }
+
+  if (!env.OTP_FROM_EMAIL) {
+    throw new Error("OTP_FROM_EMAIL is missing");
+  }
+
   console.log("✅ Resend mailer ready");
 }
 
@@ -18,12 +26,10 @@ export async function sendOtpEmail(to: string, otp: string) {
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>QMatrix Technologies OTP</title>
     </head>
-    <body style="margin:0;padding:0;background-color:#f5f7fb;font-family:Inter,Arial,Helvetica,sans-serif;color:#111827;">
-      
+    <body style="margin:0;padding:0;background-color:#f5f7fb;font-family:Arial,Helvetica,sans-serif;color:#111827;">
       <div style="width:100%;background:#f5f7fb;padding:40px 16px;">
         <div style="max-width:640px;margin:0 auto;">
 
-          <!-- Top soft glow area -->
           <div
             style="
               height:110px;
@@ -37,7 +43,6 @@ export async function sendOtpEmail(to: string, otp: string) {
             "
           ></div>
 
-          <!-- Main card -->
           <div
             style="
               background:#ffffff;
@@ -48,7 +53,6 @@ export async function sendOtpEmail(to: string, otp: string) {
               box-shadow:0 12px 40px rgba(15,23,42,0.08);
             "
           >
-            <!-- Brand -->
             <div style="padding:0 40px 28px 40px;margin-top:-78px;text-align:center;">
               <div
                 style="
@@ -68,7 +72,6 @@ export async function sendOtpEmail(to: string, otp: string) {
               </div>
             </div>
 
-            <!-- Content -->
             <div style="padding:0 40px 36px 40px;">
               <div
                 style="
@@ -112,14 +115,12 @@ export async function sendOtpEmail(to: string, otp: string) {
                 account. This code is private and should not be shared with anyone.
               </p>
 
-              <!-- OTP card -->
               <div
                 style="
                   margin:30px 0 28px 0;
                   border:1px solid #e9edf5;
                   border-radius:24px;
-                  background:
-                    linear-gradient(180deg, #fcfcff 0%, #f8faff 100%);
+                  background:linear-gradient(180deg, #fcfcff 0%, #f8faff 100%);
                   padding:30px 24px;
                   text-align:center;
                 "
@@ -152,7 +153,7 @@ export async function sendOtpEmail(to: string, otp: string) {
                     color:#111827;
                   "
                 >
-                  ${otp}
+                  ${String(otp)}
                 </div>
 
                 <div
@@ -167,13 +168,12 @@ export async function sendOtpEmail(to: string, otp: string) {
                 </div>
               </div>
 
-              <!-- Info section -->
               <div
                 style="
                   border:1px solid #eef2f7;
                   border-radius:20px;
                   background:#fbfcfe;
-                  padding:18px 18px;
+                  padding:18px;
                   margin:0 0 22px 0;
                 "
               >
@@ -206,7 +206,6 @@ export async function sendOtpEmail(to: string, otp: string) {
               </p>
             </div>
 
-            <!-- Footer -->
             <div
               style="
                 border-top:1px solid #eef2f7;
@@ -254,13 +253,24 @@ export async function sendOtpEmail(to: string, otp: string) {
   </html>
   `;
 
-  const result = await resend.emails.send({
-    from: env.OTP_FROM_EMAIL,
-    to,
-    subject: "Your QMatrix verification code",
-    html,
-    text: `Your QMatrix Technologies verification code is ${otp}. It expires in 10 minutes. Do not share this code with anyone.`,
-  });
+  try {
+    const { data, error } = await resend.emails.send({
+      from: env.OTP_FROM_EMAIL, // example: QMatrix <noreply@qmatrixtechnologies.com>
+      to: [to],
+      subject: "Your QMatrix verification code",
+      html,
+      text: `Your QMatrix Technologies verification code is ${otp}. It expires in 10 minutes. Do not share this code with anyone.`,
+    });
 
-  console.log("✅ OTP email sent:", result);
+    if (error) {
+      console.error("❌ Resend send error:", error);
+      throw new Error(error.message || "Failed to send OTP email");
+    }
+
+    console.log("✅ OTP email sent:", data);
+    return data;
+  } catch (error) {
+    console.error("❌ sendOtpEmail failed:", error);
+    throw error;
+  }
 }
