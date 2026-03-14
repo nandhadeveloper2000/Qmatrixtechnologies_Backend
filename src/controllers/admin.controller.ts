@@ -3,12 +3,12 @@ import { EnquiryModel } from "../models/enquiry.model";
 import { BlogModel } from "../models/blog.model";
 import { UserModel } from "../models/user.model";
 import { CourseModel } from "../models/course.model";
+import { ContactMessageModel } from "../models/contactMessage.model";
 
 export async function getAdminDashboard(req: Request, res: Response) {
   try {
     const now = new Date();
 
-    // Today start/end
     const todayStart = new Date(
       now.getFullYear(),
       now.getMonth(),
@@ -29,7 +29,6 @@ export async function getAdminDashboard(req: Request, res: Response) {
       999
     );
 
-    // Last 7 days
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - 6);
     weekStart.setHours(0, 0, 0, 0);
@@ -39,20 +38,32 @@ export async function getAdminDashboard(req: Request, res: Response) {
       totalBlogs,
       totalUsers,
       totalCourses,
+      totalContactMessages,
+
       todayEnquiries,
+      todayContactMessages,
+
       weeklyUsers,
+
       publishedBlogs,
       publishedCourses,
+
       recentEnquiries,
       recentUsers,
+      recentContactMessages,
     ] = await Promise.all([
       EnquiryModel.countDocuments(),
       BlogModel.countDocuments(),
       UserModel.countDocuments(),
       CourseModel.countDocuments(),
+      ContactMessageModel.countDocuments(),
 
       EnquiryModel.countDocuments({
         created_at: { $gte: todayStart, $lte: todayEnd },
+      }),
+
+      ContactMessageModel.countDocuments({
+        createdAt: { $gte: todayStart, $lte: todayEnd },
       }),
 
       UserModel.countDocuments({
@@ -78,6 +89,12 @@ export async function getAdminDashboard(req: Request, res: Response) {
         .limit(5)
         .select("name email role is_active avatar_url created_at")
         .lean(),
+
+      ContactMessageModel.find({})
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .select("firstName lastName email countryCode phone status createdAt")
+        .lean(),
     ]);
 
     return res.status(200).json({
@@ -88,8 +105,11 @@ export async function getAdminDashboard(req: Request, res: Response) {
         totalBlogs,
         totalUsers,
         totalCourses,
+        totalContactMessages,
 
         todayEnquiries,
+        todayContactMessages,
+
         weeklyUsers,
 
         publishedBlogs,
@@ -97,6 +117,7 @@ export async function getAdminDashboard(req: Request, res: Response) {
 
         recentEnquiries,
         recentUsers,
+        recentContactMessages,
       },
     });
   } catch (error: any) {
