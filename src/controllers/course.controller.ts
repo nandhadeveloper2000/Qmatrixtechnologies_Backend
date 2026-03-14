@@ -57,6 +57,7 @@ function uploadBufferToCloudinary(
       (error, result) => {
         if (error) return reject(error);
         if (!result) return reject(new Error("Cloudinary upload failed"));
+
         resolve({
           secure_url: result.secure_url,
           public_id: result.public_id,
@@ -162,11 +163,9 @@ export async function createCourse(req: Request, res: Response) {
       slug: finalSlug,
       category: body.category || "New One",
 
-      shortDesc: String(body.shortDesc || "").trim(),
       description: String(body.description || "").trim(),
-      overview: String(body.overview || "").trim(),
 
-      coverImage: parseObject(body.coverImage, null as any),
+      coverImage: parseObject(body.coverImage, null),
       galleryImages: parseArray(body.galleryImages),
 
       duration: String(body.duration || "").trim(),
@@ -177,16 +176,13 @@ export async function createCourse(req: Request, res: Response) {
       classSchedule: String(body.classSchedule || "").trim(),
       mode: body.mode || "Online/Offline",
       enrolled: String(body.enrolled || "").trim(),
-      batchSize: String(body.batchSize || "").trim(),
-      admissionFee:
-        body.admissionFee === "" || body.admissionFee == null
-          ? null
-          : Number(body.admissionFee),
       placementSupport: toBool(body.placementSupport, true),
 
-      features: parseArray<string>(body.features),
-      support: parseArray<string>(body.support),
+      whatYouWillLearn: parseArray<string>(body.whatYouWillLearn),
+      features: parseArray(body.features),
+      supportAndCareer: parseArray<string>(body.supportAndCareer),
       curriculum: parseArray(body.curriculum),
+
       interviewQuestions: parseArray(body.interviewQuestions),
       faq: parseArray(body.faq),
 
@@ -236,7 +232,7 @@ export async function listPublishedCourses(req: Request, res: Response) {
     const category = String(req.query.category || "").trim();
     const featured = String(req.query.featured || "").trim();
 
-    const filter: Record<string, any> = {
+    const filter: Record<string, unknown> = {
       isPublished: true,
     };
 
@@ -245,7 +241,7 @@ export async function listPublishedCourses(req: Request, res: Response) {
 
     const items = await CourseModel.find(filter)
       .select(
-        "title slug category shortDesc coverImage duration modulesCount rating isFeatured createdAt publishedAt updatedAt"
+        "title slug category description coverImage duration modulesCount rating isFeatured createdAt publishedAt updatedAt"
       )
       .sort({ publishedAt: -1, createdAt: -1 });
 
@@ -355,23 +351,17 @@ export async function updateCourse(req: Request, res: Response) {
 
     const nextIsPublished = toBool(body.isPublished, existing.isPublished);
 
-    const payload: Record<string, any> = {
+    const payload: Record<string, unknown> = {
       ...(body.title !== undefined ? { title: String(body.title).trim() } : {}),
       slug: nextSlug,
 
       ...(body.category !== undefined ? { category: body.category } : {}),
-      ...(body.shortDesc !== undefined
-        ? { shortDesc: String(body.shortDesc).trim() }
-        : {}),
       ...(body.description !== undefined
         ? { description: String(body.description).trim() }
         : {}),
-      ...(body.overview !== undefined
-        ? { overview: String(body.overview).trim() }
-        : {}),
 
       ...(body.coverImage !== undefined
-        ? { coverImage: parseObject(body.coverImage, null as any) }
+        ? { coverImage: parseObject(body.coverImage, null) }
         : {}),
       ...(body.galleryImages !== undefined
         ? { galleryImages: parseArray(body.galleryImages) }
@@ -395,26 +385,18 @@ export async function updateCourse(req: Request, res: Response) {
       ...(body.enrolled !== undefined
         ? { enrolled: String(body.enrolled).trim() }
         : {}),
-      ...(body.batchSize !== undefined
-        ? { batchSize: String(body.batchSize).trim() }
-        : {}),
-      ...(body.admissionFee !== undefined
-        ? {
-            admissionFee:
-              body.admissionFee === "" || body.admissionFee == null
-                ? null
-                : Number(body.admissionFee),
-          }
-        : {}),
       ...(body.placementSupport !== undefined
         ? { placementSupport: toBool(body.placementSupport, true) }
         : {}),
 
-      ...(body.features !== undefined
-        ? { features: parseArray<string>(body.features) }
+      ...(body.whatYouWillLearn !== undefined
+        ? { whatYouWillLearn: parseArray<string>(body.whatYouWillLearn) }
         : {}),
-      ...(body.support !== undefined
-        ? { support: parseArray<string>(body.support) }
+      ...(body.features !== undefined
+        ? { features: parseArray(body.features) }
+        : {}),
+      ...(body.supportAndCareer !== undefined
+        ? { supportAndCareer: parseArray<string>(body.supportAndCareer) }
         : {}),
       ...(body.curriculum !== undefined
         ? { curriculum: parseArray(body.curriculum) }
@@ -422,9 +404,7 @@ export async function updateCourse(req: Request, res: Response) {
       ...(body.interviewQuestions !== undefined
         ? { interviewQuestions: parseArray(body.interviewQuestions) }
         : {}),
-      ...(body.faq !== undefined
-        ? { faq: parseArray(body.faq) }
-        : {}),
+      ...(body.faq !== undefined ? { faq: parseArray(body.faq) } : {}),
       ...(body.isFeatured !== undefined
         ? { isFeatured: toBool(body.isFeatured, false) }
         : {}),

@@ -1,5 +1,4 @@
-// src/models/Otp.ts
-import mongoose, { Schema, Document, Model } from "mongoose";
+import mongoose, { Schema, type Document, type Model } from "mongoose";
 
 export interface IOtp extends Document {
   email: string;
@@ -32,7 +31,7 @@ const otpSchema = new Schema<IOtp>(
   }
 );
 
-// TTL index (auto delete expired OTP)
 otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-export const OtpModel: Model<IOtp> = mongoose.model<IOtp>("Otp", otpSchema);
+export const OtpModel: Model<IOtp> =
+  mongoose.models.Otp || mongoose.model<IOtp>("Otp", otpSchema);

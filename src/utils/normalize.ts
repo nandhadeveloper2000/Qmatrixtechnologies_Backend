@@ -1,1 +1,3 @@
-export const normEmail = (v: any) => String(v ?? "").trim().toLowerCase();
+export function normEmail(value: unknown): string {
+  return String(value || "").trim().toLowerCase();
+}

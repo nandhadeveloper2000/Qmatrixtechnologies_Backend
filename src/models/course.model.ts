@@ -2,10 +2,9 @@ import mongoose, { Schema, model, Types, type HydratedDocument } from "mongoose"
 
 export type UserRole = "ADMIN" | "EDITOR" | "USER";
 
-export type CourseCategory =
-  | "New One"
-  | "Recommended"
-  | "Most Placed";
+export type CourseCategory = "New One" | "Recommended" | "Most Placed";
+
+export type CourseMode = "Online" | "Offline" | "Online/Offline";
 
 export interface ICourseImage {
   url: string;
@@ -16,6 +15,11 @@ export interface ICourseImage {
 export interface ICourseModule {
   title: string;
   topics: string[];
+}
+
+export interface ICourseFeature {
+  title: string;
+  description: string;
 }
 
 export interface ICourseInterviewQuestion {
@@ -33,9 +37,7 @@ export interface ICourse {
   slug: string;
   category?: CourseCategory;
 
-  shortDesc?: string;
   description?: string;
-  overview?: string;
 
   coverImage?: ICourseImage | null;
   galleryImages?: ICourseImage[];
@@ -46,14 +48,13 @@ export interface ICourse {
 
   sessionDuration?: string;
   classSchedule?: string;
-  mode?: "Online" | "Offline" | "Online/Offline";
+  mode?: CourseMode;
   enrolled?: string;
-  batchSize?: string;
-  admissionFee?: number | null;
   placementSupport?: boolean;
 
-  features?: string[];
-  support?: string[];
+  whatYouWillLearn?: string[];
+  features?: ICourseFeature[];
+  supportAndCareer?: string[];
   curriculum?: ICourseModule[];
 
   interviewQuestions?: ICourseInterviewQuestion[];
@@ -84,7 +85,22 @@ const CourseImageSchema = new Schema<ICourseImage>(
 const CourseModuleSchema = new Schema<ICourseModule>(
   {
     title: { type: String, required: true, trim: true },
-    topics: { type: [String], default: [] },
+    topics: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (arr: string[]) => Array.isArray(arr),
+        message: "Topics must be an array of strings",
+      },
+    },
+  },
+  { _id: false }
+);
+
+const CourseFeatureSchema = new Schema<ICourseFeature>(
+  {
+    title: { type: String, required: true, trim: true },
+    description: { type: String, required: true, trim: true },
   },
   { _id: false }
 );
@@ -107,8 +123,21 @@ const CourseFaqSchema = new Schema<ICourseFaq>(
 
 const CourseSchema = new Schema<ICourse>(
   {
-    title: { type: String, required: true, trim: true },
-    slug: { type: String, required: true, unique: true, index: true, trim: true },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 200,
+    },
+
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      trim: true,
+      lowercase: true,
+    },
 
     category: {
       type: String,
@@ -117,45 +146,139 @@ const CourseSchema = new Schema<ICourse>(
       index: true,
     },
 
-    shortDesc: { type: String, default: "" },
-    description: { type: String, default: "" },
-    overview: { type: String, default: "" },
+    description: {
+      type: String,
+      default: "",
+      trim: true,
+    },
 
-    coverImage: { type: CourseImageSchema, default: null },
-    galleryImages: { type: [CourseImageSchema], default: [] },
+    coverImage: {
+      type: CourseImageSchema,
+      default: null,
+    },
 
-    duration: { type: String, default: "" },
-    modulesCount: { type: String, default: "" },
-    rating: { type: Number, default: 0 },
+    galleryImages: {
+      type: [CourseImageSchema],
+      default: [],
+    },
 
-    sessionDuration: { type: String, default: "" },
-    classSchedule: { type: String, default: "" },
+    duration: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    modulesCount: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    rating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+
+    sessionDuration: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
+    classSchedule: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+
     mode: {
       type: String,
       enum: ["Online", "Offline", "Online/Offline"],
       default: "Online/Offline",
     },
-    enrolled: { type: String, default: "" },
-    batchSize: { type: String, default: "" },
-    admissionFee: { type: Number, default: null },
-    placementSupport: { type: Boolean, default: true },
 
-    features: { type: [String], default: [] },
-    support: { type: [String], default: [] },
-    curriculum: { type: [CourseModuleSchema], default: [] },
+    enrolled: {
+      type: String,
+      default: "",
+      trim: true,
+    },
 
-    interviewQuestions: { type: [CourseInterviewQuestionSchema], default: [] },
-    faq: { type: [CourseFaqSchema], default: [] },
+    placementSupport: {
+      type: Boolean,
+      default: true,
+    },
 
-    isFeatured: { type: Boolean, default: false },
-    isPublished: { type: Boolean, default: false },
-    publishedAt: { type: Date, default: null },
+    whatYouWillLearn: {
+      type: [String],
+      default: [],
+    },
 
-    createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
-    updatedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    features: {
+      type: [CourseFeatureSchema],
+      default: [],
+    },
+
+    supportAndCareer: {
+      type: [String],
+      default: [],
+    },
+
+    curriculum: {
+      type: [CourseModuleSchema],
+      default: [],
+    },
+
+    interviewQuestions: {
+      type: [CourseInterviewQuestionSchema],
+      default: [],
+    },
+
+    faq: {
+      type: [CourseFaqSchema],
+      default: [],
+    },
+
+    isFeatured: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    isPublished: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    publishedAt: {
+      type: Date,
+      default: null,
+    },
+
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    updatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    versionKey: false,
+  }
 );
+
+CourseSchema.index({ title: 1 });
+CourseSchema.index({ category: 1, isPublished: 1 });
+CourseSchema.index({ isFeatured: 1, isPublished: 1 });
+CourseSchema.index({ createdAt: -1 });
 
 export const CourseModel =
   mongoose.models.Course || model<ICourse>("Course", CourseSchema);

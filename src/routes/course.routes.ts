@@ -17,11 +17,40 @@ import { requireRole } from "../middlewares/rbac";
 const router = Router();
 
 /* ADMIN */
-router.get("/admin/all", requireAuth, requireRole("ADMIN", "EDITOR"), adminListCourses);
-router.get("/admin/:id", requireAuth, requireRole("ADMIN", "EDITOR"), adminGetCourseById);
-router.post("/", requireAuth, requireRole("ADMIN", "EDITOR"), createCourse);
-router.put("/:id", requireAuth, requireRole("ADMIN", "EDITOR"), updateCourse);
-router.delete("/:id", requireAuth, requireRole("ADMIN"), deleteCourse);
+router.get(
+  "/admin/all",
+  requireAuth,
+  requireRole("ADMIN", "EDITOR"),
+  adminListCourses
+);
+
+router.get(
+  "/admin/:id",
+  requireAuth,
+  requireRole("ADMIN", "EDITOR"),
+  adminGetCourseById
+);
+
+router.post(
+  "/",
+  requireAuth,
+  requireRole("ADMIN", "EDITOR"),
+  createCourse
+);
+
+router.put(
+  "/:id",
+  requireAuth,
+  requireRole("ADMIN", "EDITOR"),
+  updateCourse
+);
+
+router.delete(
+  "/:id",
+  requireAuth,
+  requireRole("ADMIN"),
+  deleteCourse
+);
 
 router.post(
   "/upload-image",

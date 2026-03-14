@@ -6,6 +6,7 @@
     import courses from "./course.routes";
     import Admin from "./admin.routes";
     import pageSeo from "./pageSeo.routes";
+import contactMessageRoutes from "./contactMessage.routes";
 
     
     const router = Router();
@@ -16,5 +17,6 @@
     router.use("/courses", courses);
     router.use("/admin",Admin);
     router.use("/page-seo", pageSeo);
+    router.use("/contact",contactMessageRoutes);
 
     export default router;      

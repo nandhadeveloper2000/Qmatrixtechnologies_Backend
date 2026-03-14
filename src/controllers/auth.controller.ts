@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { env } from "../config/env";
 import { sendOtpEmail } from "../config/mailer";
-import { UserModel } from "../models/user.model";
+import { UserModel, type UserDoc } from "../models/user.model";
 import { OtpModel } from "../models/otp.model";
 import { normEmail } from "../utils/normalize";
 import { compareValue, hashValue } from "../utils/hash";
@@ -24,7 +24,7 @@ function refreshToHash(refreshToken: string) {
   return `${refreshToken}:${env.REFRESH_PEPPER}`;
 }
 
-function serializeUser(user: any) {
+function serializeUser(user: UserDoc) {
   return {
     uid: String(user._id),
     id: String(user._id),
@@ -41,38 +41,72 @@ function serializeUser(user: any) {
   };
 }
 
+/**
+ * Allowed login policy:
+ * 1. If email exists in User collection -> allow
+ * 2. Else if email exists in MASTER_GOOGLE_EMAILS -> auto create ADMIN user and allow
+ * 3. Else -> deny login
+ */
+async function findAllowedLoginUser(email: string): Promise<UserDoc | null> {
+  let user = await UserModel.findOne({ email });
+
+  if (user) return user;
+
+  const isMasterEmail = env.MASTER_GOOGLE_EMAILS.includes(email);
+
+  if (!isMasterEmail) {
+    return null;
+  }
+
+  user = await UserModel.create({
+    email,
+    name: "Master Admin",
+    role: "ADMIN",
+    is_active: true,
+  });
+
+  return user;
+}
+
 export async function requestOtp(req: Request, res: Response) {
   try {
     if (!env.ENABLE_LOGIN_OTP) {
-      return res.status(400).json({ success: false, message: "OTP disabled" });
-    }
-
-    const email = normEmail(req.body?.email);
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email required" });
-    }
-
-    let user = await UserModel.findOne({ email });
-
-    if (!user && env.MASTER_GOOGLE_EMAILS.includes(email)) {
-      user = await UserModel.create({
-        email,
-        name: "Master Admin",
-        role: "ADMIN",
-        is_active: true,
+      return res.status(400).json({
+        success: false,
+        message: "OTP disabled",
       });
     }
 
+    const email = normEmail(req.body?.email);
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "Email required",
+      });
+    }
+
+    const user = await findAllowedLoginUser(email);
+
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res.status(403).json({
+        success: false,
+        message: "This email is not allowed to login",
+      });
     }
 
     if (!user.is_active) {
-      return res.status(403).json({ success: false, message: "User inactive" });
+      return res.status(403).json({
+        success: false,
+        message: "User inactive",
+      });
     }
 
     if (user.role === "USER") {
-      return res.status(403).json({ success: false, message: "Not allowed" });
+      return res.status(403).json({
+        success: false,
+        message: "Not allowed",
+      });
     }
 
     const otp = genOtp();
@@ -89,7 +123,10 @@ export async function requestOtp(req: Request, res: Response) {
 
     await sendOtpEmail(email, otp);
 
-    return res.json({ success: true, message: "OTP sent" });
+    return res.json({
+      success: true,
+      message: "OTP sent",
+    });
   } catch (error) {
     console.error("requestOtp error:", error);
     return res.status(500).json({
@@ -105,38 +142,59 @@ export async function verifyOtp(req: Request, res: Response) {
     const otp = String(req.body?.otp ?? "").trim();
 
     if (!email || otp.length !== 6) {
-      return res.status(400).json({ success: false, message: "Invalid input" });
+      return res.status(400).json({
+        success: false,
+        message: "Invalid input",
+      });
     }
 
-    const user = await UserModel.findOne({ email });
+    const user = await findAllowedLoginUser(email);
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res.status(403).json({
+        success: false,
+        message: "This email is not allowed to login",
+      });
     }
 
     if (!user.is_active) {
-      return res.status(403).json({ success: false, message: "User inactive" });
+      return res.status(403).json({
+        success: false,
+        message: "User inactive",
+      });
     }
 
     if (user.role === "USER") {
-      return res.status(403).json({ success: false, message: "Not allowed" });
+      return res.status(403).json({
+        success: false,
+        message: "Not allowed",
+      });
     }
 
     const doc = await OtpModel.findOne({ email }).sort({ createdAt: -1 });
 
     if (!doc) {
-      return res.status(400).json({ success: false, message: "OTP expired" });
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired",
+      });
     }
 
     if (doc.expiresAt.getTime() < Date.now()) {
       await OtpModel.deleteMany({ email });
-      return res.status(400).json({ success: false, message: "OTP expired" });
+      return res.status(400).json({
+        success: false,
+        message: "OTP expired",
+      });
     }
 
     const ok = await compareValue(otpToHash(email, otp), doc.otpHash);
 
     if (!ok) {
-      return res.status(401).json({ success: false, message: "Wrong OTP" });
+      return res.status(401).json({
+        success: false,
+        message: "Wrong OTP",
+      });
     }
 
     await OtpModel.deleteMany({ email });
@@ -145,6 +203,7 @@ export async function verifyOtp(req: Request, res: Response) {
       uid: String(user._id),
       email: user.email,
       role: user.role,
+      tokenVersion: user.token_version,
     };
 
     const accessToken = signAccessToken(payload);
@@ -171,7 +230,7 @@ export async function verifyOtp(req: Request, res: Response) {
 
 export async function refresh(req: Request, res: Response) {
   try {
-    const refreshToken = String(req.body?.refreshToken ?? "");
+    const refreshToken = String(req.body?.refreshToken ?? "").trim();
 
     if (!refreshToken) {
       return res.status(400).json({
@@ -193,12 +252,32 @@ export async function refresh(req: Request, res: Response) {
 
     const user = await UserModel.findById(payload.uid);
 
-    if (!user || !user.is_active) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    if (!user.is_active) {
+      return res.status(401).json({
+        success: false,
+        message: "User inactive",
+      });
+    }
+
+    if (user.role === "USER") {
+      return res.status(403).json({
+        success: false,
+        message: "Not allowed",
+      });
     }
 
     if (!user.refresh_token_hash) {
-      return res.status(401).json({ success: false, message: "Logged out" });
+      return res.status(401).json({
+        success: false,
+        message: "Logged out",
+      });
     }
 
     const ok = await compareValue(
@@ -207,13 +286,17 @@ export async function refresh(req: Request, res: Response) {
     );
 
     if (!ok) {
-      return res.status(401).json({ success: false, message: "Token mismatch" });
+      return res.status(401).json({
+        success: false,
+        message: "Token mismatch",
+      });
     }
 
     const newPayload: AccessPayload = {
       uid: String(user._id),
       email: user.email,
       role: user.role,
+      tokenVersion: user.token_version,
     };
 
     const newAccess = signAccessToken(newPayload);
@@ -239,23 +322,32 @@ export async function refresh(req: Request, res: Response) {
 
 export async function logout(req: Request, res: Response) {
   try {
-    const email = normEmail(req.body?.email);
+    const uid = req.user?.uid;
 
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email required" });
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
     }
 
     await UserModel.updateOne(
-      { email },
-      { $set: { refresh_token_hash: null }, $inc: { token_version: 1 } }
+      { _id: uid },
+      {
+        $set: { refresh_token_hash: null },
+        $inc: { token_version: 1 },
+      }
     );
 
-    return res.json({ success: true, message: "Logged out" });
+    return res.json({
+      success: true,
+      message: "Logged out",
+    });
   } catch (error) {
     console.error("logout error:", error);
     return res.status(500).json({
-      success: false,
-      message: "Failed to logout",
-    });
+        success: false,
+        message: "Failed to logout",
+      });
   }
 }

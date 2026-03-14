@@ -333,3 +333,21 @@ export async function getBlogBySlug(req: Request, res: Response) {
     });
   }
 }
+export async function adminListBlogs(req: Request, res: Response) {
+  try {
+    const items = await BlogModel.find({})
+      .populate("createdBy", "name role email")
+      .sort({ createdAt: -1 });
+
+    return res.json({
+      success: true,
+      data: items,
+    });
+  } catch (error) {
+    console.error("adminListBlogs error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch blogs",
+    });
+  }
+}
