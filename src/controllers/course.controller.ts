@@ -187,8 +187,8 @@ export async function createCourse(req: Request, res: Response) {
       features: parseArray<string>(body.features),
       support: parseArray<string>(body.support),
       curriculum: parseArray(body.curriculum),
-      trainers: parseArray(body.trainers),
-      reviews: parseArray(body.reviews),
+      interviewQuestions: parseArray(body.interviewQuestions),
+      faq: parseArray(body.faq),
 
       isFeatured: toBool(body.isFeatured, false),
       isPublished,
@@ -419,11 +419,11 @@ export async function updateCourse(req: Request, res: Response) {
       ...(body.curriculum !== undefined
         ? { curriculum: parseArray(body.curriculum) }
         : {}),
-      ...(body.trainers !== undefined
-        ? { trainers: parseArray(body.trainers) }
+      ...(body.interviewQuestions !== undefined
+        ? { interviewQuestions: parseArray(body.interviewQuestions) }
         : {}),
-      ...(body.reviews !== undefined
-        ? { reviews: parseArray(body.reviews) }
+      ...(body.faq !== undefined
+        ? { faq: parseArray(body.faq) }
         : {}),
       ...(body.isFeatured !== undefined
         ? { isFeatured: toBool(body.isFeatured, false) }

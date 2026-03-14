@@ -18,20 +18,14 @@ export interface ICourseModule {
   topics: string[];
 }
 
-export interface ICourseTrainer {
-  name: string;
-  role?: string;
-  bio?: string;
-  experience?: string;
-  linkedin?: string;
-  image?: ICourseImage | null;
+export interface ICourseInterviewQuestion {
+  question: string;
+  answer: string;
 }
 
-export interface ICourseReview {
-  name: string;
-  rating: number;
-  comment: string;
-  role?: string;
+export interface ICourseFaq {
+  question: string;
+  answer: string;
 }
 
 export interface ICourse {
@@ -61,8 +55,9 @@ export interface ICourse {
   features?: string[];
   support?: string[];
   curriculum?: ICourseModule[];
-  trainers?: ICourseTrainer[];
-  reviews?: ICourseReview[];
+
+  interviewQuestions?: ICourseInterviewQuestion[];
+  faq?: ICourseFaq[];
 
   isFeatured?: boolean;
   isPublished: boolean;
@@ -94,24 +89,18 @@ const CourseModuleSchema = new Schema<ICourseModule>(
   { _id: false }
 );
 
-const CourseTrainerSchema = new Schema<ICourseTrainer>(
+const CourseInterviewQuestionSchema = new Schema<ICourseInterviewQuestion>(
   {
-    name: { type: String, required: true, trim: true },
-    role: { type: String, default: "" },
-    bio: { type: String, default: "" },
-    experience: { type: String, default: "" },
-    linkedin: { type: String, default: "" },
-    image: { type: CourseImageSchema, default: null },
+    question: { type: String, required: true, trim: true },
+    answer: { type: String, required: true, trim: true },
   },
   { _id: false }
 );
 
-const CourseReviewSchema = new Schema<ICourseReview>(
+const CourseFaqSchema = new Schema<ICourseFaq>(
   {
-    name: { type: String, required: true, trim: true },
-    rating: { type: Number, min: 1, max: 5, required: true },
-    comment: { type: String, required: true, trim: true },
-    role: { type: String, default: "" },
+    question: { type: String, required: true, trim: true },
+    answer: { type: String, required: true, trim: true },
   },
   { _id: false }
 );
@@ -154,8 +143,9 @@ const CourseSchema = new Schema<ICourse>(
     features: { type: [String], default: [] },
     support: { type: [String], default: [] },
     curriculum: { type: [CourseModuleSchema], default: [] },
-    trainers: { type: [CourseTrainerSchema], default: [] },
-    reviews: { type: [CourseReviewSchema], default: [] },
+
+    interviewQuestions: { type: [CourseInterviewQuestionSchema], default: [] },
+    faq: { type: [CourseFaqSchema], default: [] },
 
     isFeatured: { type: Boolean, default: false },
     isPublished: { type: Boolean, default: false },
