@@ -12,26 +12,31 @@ function getPageKeyFromReq(req: Request): string {
   return normalizePageKey(req.params.pageKey);
 }
 
-/* PUBLIC: GET ONE PAGE SEO */
-export const getPageSEOByKey = asyncHandler(async (req: Request, res: Response) => {
-  const pageKey = getPageKeyFromReq(req);
+export const getPageSEOByKey = async (req: Request, res: Response) => {
+  try {
+    const { pageKey } = req.params;
 
-  if (!pageKey) {
-    throw new ApiError(400, "pageKey is required");
+    const seo = await PageSEO.findOne({ pageKey }).lean();
+
+    if (!seo) {
+      return res.status(404).json({
+        success: false,
+        message: "SEO not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: seo,
+    });
+  } catch (error) {
+    console.error("getPageSEOByKey error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch page SEO",
+    });
   }
-
-  const seo = await PageSEO.findOne({ pageKey }).lean();
-
-  if (!seo) {
-    throw new ApiError(404, "SEO record not found");
-  }
-
-  return res.status(200).json({
-    success: true,
-    data: seo,
-  });
-});
-
+};
 /* ADMIN/EDITOR: LIST PAGE SEO */
 export const listPageSEO = asyncHandler(async (_req: Request, res: Response) => {
   const items = await PageSEO.find().sort({ pageKey: 1 }).lean();
