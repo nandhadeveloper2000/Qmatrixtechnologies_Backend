@@ -67,7 +67,7 @@ function isAbsoluteUrl(value: unknown) {
 
 function parseSeo(value: unknown, slug: string) {
   const seo = parseObject<any>(value, {});
-  const fallbackCanonical = `https://qmatrixtechnologies.com/courses/${slug}`;
+  const fallbackCanonical = `https://qmatrixtechnologies.com/course-detail/${slug}`;
 
   const ogImage = seo?.ogImage ? parseObject(seo.ogImage, null) : null;
 
