@@ -19,9 +19,10 @@ router.get("/public/:slug", getBlogBySlug);
 
 /* ADMIN */
 router.get("/", requireAuth, requireRole("ADMIN", "EDITOR", "USER"), listBlogs);
-router.get("/admin/:id", requireAuth, requireRole("ADMIN", "EDITOR", "USER"), getBlogById);
 router.post("/", requireAuth, requireRole("ADMIN", "EDITOR", "USER"), createBlog);
-router.put("/update/:id", requireAuth, requireRole("ADMIN", "EDITOR", "USER"), updateBlog);
+
+router.get("/admin/:id", requireAuth, requireRole("ADMIN", "EDITOR", "USER"), getBlogById);
+router.put("/:id", requireAuth, requireRole("ADMIN", "EDITOR", "USER"), updateBlog);
 router.delete("/:id", requireAuth, requireRole("ADMIN", "USER"), deleteBlog);
 
 export default router;

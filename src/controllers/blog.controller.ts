@@ -1,5 +1,14 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import { BlogModel } from "../models/blog.model";
+
+type IdParams = {
+  id: string;
+};
+
+type SlugParams = {
+  slug: string;
+};
 
 function normalizeSlug(value: string) {
   return String(value || "")
@@ -95,7 +104,7 @@ function parseSeo(value: unknown, slug: string) {
     ].includes(String(seo?.robots || "").trim())
       ? String(seo.robots).trim()
       : "index,follow",
-    schemaType: "Article",
+    schemaType: "Article" as const,
   };
 }
 
@@ -150,7 +159,7 @@ export async function createBlog(req: Request, res: Response) {
       seo: parseSeo(body.seo, finalSlug),
       isPublished,
       publishedAt: isPublished ? body.publishedAt || new Date() : null,
-      createdBy: req.user!.uid,
+      createdBy: req.user?.uid,
     });
 
     return res.status(201).json({
@@ -188,9 +197,21 @@ export async function listBlogs(req: Request, res: Response) {
   }
 }
 
-export async function getBlogById(req: Request, res: Response) {
+export async function getBlogById(
+  req: Request<IdParams>,
+  res: Response
+) {
   try {
-    const doc = await BlogModel.findById(req.params.id).populate(
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid blog ID",
+      });
+    }
+
+    const doc = await BlogModel.findById(id).populate(
       "createdBy",
       "name email role"
     );
@@ -215,15 +236,27 @@ export async function getBlogById(req: Request, res: Response) {
   }
 }
 
-export async function updateBlog(req: Request, res: Response) {
+export async function updateBlog(
+  req: Request<IdParams>,
+  res: Response
+) {
   try {
+    const { id } = req.params;
     const body = req.body ?? {};
-    const existing = await BlogModel.findById(req.params.id);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid blog ID",
+      });
+    }
+
+    const existing = await BlogModel.findById(id);
 
     if (!existing) {
       return res.status(404).json({
         success: false,
-        message: "Not found",
+        message: "Blog not found",
       });
     }
 
@@ -241,7 +274,7 @@ export async function updateBlog(req: Request, res: Response) {
 
       const slugExists = await BlogModel.findOne({
         slug: nextSlug,
-        _id: { $ne: req.params.id },
+        _id: { $ne: id },
       });
 
       if (slugExists) {
@@ -295,7 +328,7 @@ export async function updateBlog(req: Request, res: Response) {
       payload.publishedAt = null;
     }
 
-    const doc = await BlogModel.findByIdAndUpdate(req.params.id, payload, {
+    const doc = await BlogModel.findByIdAndUpdate(id, payload, {
       new: true,
       runValidators: true,
     }).populate("createdBy", "name email role");
@@ -313,14 +346,26 @@ export async function updateBlog(req: Request, res: Response) {
   }
 }
 
-export async function deleteBlog(req: Request, res: Response) {
+export async function deleteBlog(
+  req: Request<IdParams>,
+  res: Response
+) {
   try {
-    const doc = await BlogModel.findByIdAndDelete(req.params.id);
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid blog ID",
+      });
+    }
+
+    const doc = await BlogModel.findByIdAndDelete(id);
 
     if (!doc) {
       return res.status(404).json({
         success: false,
-        message: "Not found",
+        message: "Blog not found",
       });
     }
 
@@ -355,7 +400,10 @@ export async function listPublishedBlogs(req: Request, res: Response) {
   }
 }
 
-export async function getBlogBySlug(req: Request, res: Response) {
+export async function getBlogBySlug(
+  req: Request<SlugParams>,
+  res: Response
+) {
   try {
     const { slug } = req.params;
 
