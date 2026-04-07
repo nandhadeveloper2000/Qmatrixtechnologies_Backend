@@ -12,9 +12,17 @@ function getPageKeyFromReq(req: Request): string {
   return normalizePageKey(req.params.pageKey);
 }
 
+/* PUBLIC: GET PAGE SEO BY KEY */
 export const getPageSEOByKey = async (req: Request, res: Response) => {
   try {
-    const { pageKey } = req.params;
+    const pageKey = getPageKeyFromReq(req);
+
+    if (!pageKey) {
+      return res.status(400).json({
+        success: false,
+        message: "pageKey is required",
+      });
+    }
 
     const seo = await PageSEO.findOne({ pageKey }).lean();
 
@@ -37,6 +45,7 @@ export const getPageSEOByKey = async (req: Request, res: Response) => {
     });
   }
 };
+
 /* ADMIN/EDITOR: LIST PAGE SEO */
 export const listPageSEO = asyncHandler(async (_req: Request, res: Response) => {
   const items = await PageSEO.find().sort({ pageKey: 1 }).lean();
