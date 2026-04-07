@@ -5,6 +5,7 @@ import hpp from "hpp";
 import cookieParser from "cookie-parser";
 import routes from "./routes";
 import { env } from "./config/env";
+import { errorHandler, notFoundHandler } from "./middlewares/error.middleware";
 
 export const app = express();
 
@@ -38,8 +39,12 @@ app.use(hpp());
 
 app.get("/", (_req, res) => {
   res.send("QMTechnologies API running");
-});app.use("/api", routes);
+});
 
-app.use((_req, res) =>
-  res.status(404).json({ success: false, message: "Route not found" })
-);
+app.use("/api", routes);
+
+/* 404 handler */
+app.use(notFoundHandler);
+
+/* Global error handler */
+app.use(errorHandler);
