@@ -5,24 +5,38 @@ import {
   listPageSEO,
   upsertPageSEO,
 } from "../controllers/pageSeo.controller";
+
 import { requireAuth } from "../middlewares/auth";
 import { requireRole } from "../middlewares/rbac";
 
 const router = Router();
 
-/* PUBLIC */
+/* =========================
+   PUBLIC (SEO FETCH)
+========================= */
 router.get("/public/:pageKey", getPageSEOByKey);
 
-/* ADMIN / EDITOR */
-router.get("/admin", requireAuth, requireRole("ADMIN", "EDITOR"), listPageSEO);
+/* =========================
+   ADMIN / EDITOR
+========================= */
 
-router.post(
+/* LIST ALL SEO */
+router.get(
+  "/admin",
+  requireAuth,
+  requireRole("ADMIN", "EDITOR"),
+  listPageSEO
+);
+
+/* GET SINGLE */
+router.get(
   "/admin/:pageKey",
   requireAuth,
   requireRole("ADMIN", "EDITOR"),
-  upsertPageSEO
+  getPageSEOByKey
 );
 
+/* UPSERT (CREATE + UPDATE) */
 router.put(
   "/admin/:pageKey",
   requireAuth,
@@ -30,6 +44,7 @@ router.put(
   upsertPageSEO
 );
 
+/* DELETE */
 router.delete(
   "/admin/:pageKey",
   requireAuth,
