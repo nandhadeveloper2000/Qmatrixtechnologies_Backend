@@ -26,6 +26,8 @@ function parseArray<T>(value: unknown, fallback: T[] = []): T[] {
 }
 
 function parseObject<T>(value: unknown, fallback: T): T {
+  if (value === null) return fallback;
+
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as T;
   }
@@ -42,6 +44,53 @@ function parseObject<T>(value: unknown, fallback: T): T {
   }
 
   return fallback;
+}
+
+function normalizeKeywords(input: unknown): string[] {
+  if (Array.isArray(input)) {
+    return input.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof input === "string") {
+    return input
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function isAbsoluteUrl(value: unknown) {
+  return /^https?:\/\/.+/i.test(String(value || "").trim());
+}
+
+function parseSeo(value: unknown, slug: string) {
+  const seo = parseObject<any>(value, {});
+  const fallbackCanonical = `https://qmatrixtechnologies.com/courses/${slug}`;
+
+  const ogImage = seo?.ogImage ? parseObject(seo.ogImage, null) : null;
+
+  return {
+    metaTitle: String(seo?.metaTitle || "").trim(),
+    metaDescription: String(seo?.metaDescription || "").trim(),
+    keywords: normalizeKeywords(seo?.keywords),
+    canonicalUrl: isAbsoluteUrl(seo?.canonicalUrl)
+      ? String(seo.canonicalUrl).trim()
+      : fallbackCanonical,
+    ogTitle: String(seo?.ogTitle || "").trim(),
+    ogDescription: String(seo?.ogDescription || "").trim(),
+    ogImage,
+    robots: [
+      "index,follow",
+      "noindex,follow",
+      "index,nofollow",
+      "noindex,nofollow",
+    ].includes(String(seo?.robots || "").trim())
+      ? String(seo.robots).trim()
+      : "index,follow",
+    schemaType: "Course",
+  };
 }
 
 function uploadBufferToCloudinary(
@@ -186,6 +235,8 @@ export async function createCourse(req: Request, res: Response) {
       interviewQuestions: parseArray(body.interviewQuestions),
       faq: parseArray(body.faq),
 
+      seo: parseSeo(body.seo, finalSlug),
+
       isFeatured: toBool(body.isFeatured, false),
       isPublished,
       publishedAt: isPublished ? new Date() : null,
@@ -241,7 +292,7 @@ export async function listPublishedCourses(req: Request, res: Response) {
 
     const items = await CourseModel.find(filter)
       .select(
-        "title slug category description coverImage duration modulesCount rating isFeatured createdAt publishedAt updatedAt"
+        "title slug category description coverImage duration modulesCount rating isFeatured seo createdAt publishedAt updatedAt"
       )
       .sort({ publishedAt: -1, createdAt: -1 });
 
@@ -405,6 +456,7 @@ export async function updateCourse(req: Request, res: Response) {
         ? { interviewQuestions: parseArray(body.interviewQuestions) }
         : {}),
       ...(body.faq !== undefined ? { faq: parseArray(body.faq) } : {}),
+      ...(body.seo !== undefined ? { seo: parseSeo(body.seo, nextSlug) } : {}),
       ...(body.isFeatured !== undefined
         ? { isFeatured: toBool(body.isFeatured, false) }
         : {}),

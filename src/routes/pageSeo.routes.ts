@@ -1,32 +1,32 @@
 import { Router } from "express";
 import {
-  getPageSEOByKey,
-  upsertPageSEO,
-  listPageSEO,
   deletePageSEO,
+  getPageSEOByKey,
+  listPageSEO,
+  upsertPageSEO,
 } from "../controllers/pageSeo.controller";
 import { requireAuth } from "../middlewares/auth";
 import { requireRole } from "../middlewares/rbac";
 
 const router = Router();
 
-/* PUBLIC ROUTES */
+/* PUBLIC */
 router.get("/public/:pageKey", getPageSEOByKey);
 
-/* ADMIN ROUTES */
-router.get("/admin", requireAuth, requireRole("ADMIN"), listPageSEO);
+/* ADMIN / EDITOR */
+router.get("/admin", requireAuth, requireRole("ADMIN", "EDITOR"), listPageSEO);
 
 router.post(
   "/admin/:pageKey",
   requireAuth,
-  requireRole("ADMIN"),
+  requireRole("ADMIN", "EDITOR"),
   upsertPageSEO
 );
 
 router.put(
   "/admin/:pageKey",
   requireAuth,
-  requireRole("ADMIN"),
+  requireRole("ADMIN", "EDITOR"),
   upsertPageSEO
 );
 

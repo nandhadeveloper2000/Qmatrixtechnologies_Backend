@@ -3,8 +3,15 @@ import mongoose, { Schema, model, Types, type HydratedDocument } from "mongoose"
 export type UserRole = "ADMIN" | "EDITOR" | "USER";
 
 export type CourseCategory = "New One" | "Recommended" | "Most Placed";
-
 export type CourseMode = "Online" | "Offline" | "Online/Offline";
+
+export type SeoRobots =
+  | "index,follow"
+  | "noindex,follow"
+  | "index,nofollow"
+  | "noindex,nofollow";
+
+export type SeoSchemaType = "Course";
 
 export interface ICourseImage {
   url: string;
@@ -30,6 +37,18 @@ export interface ICourseInterviewQuestion {
 export interface ICourseFaq {
   question: string;
   answer: string;
+}
+
+export interface ICourseSEO {
+  metaTitle?: string;
+  metaDescription?: string;
+  keywords?: string[];
+  canonicalUrl?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: ICourseImage | null;
+  robots?: SeoRobots;
+  schemaType?: SeoSchemaType;
 }
 
 export interface ICourse {
@@ -59,6 +78,8 @@ export interface ICourse {
 
   interviewQuestions?: ICourseInterviewQuestion[];
   faq?: ICourseFaq[];
+
+  seo?: ICourseSEO;
 
   isFeatured?: boolean;
   isPublished: boolean;
@@ -117,6 +138,64 @@ const CourseFaqSchema = new Schema<ICourseFaq>(
   {
     question: { type: String, required: true, trim: true },
     answer: { type: String, required: true, trim: true },
+  },
+  { _id: false }
+);
+
+const CourseSeoSchema = new Schema<ICourseSEO>(
+  {
+    metaTitle: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 70,
+    },
+    metaDescription: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 170,
+    },
+    keywords: {
+      type: [String],
+      default: [],
+    },
+    canonicalUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    ogTitle: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 120,
+    },
+    ogDescription: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 220,
+    },
+    ogImage: {
+      type: CourseImageSchema,
+      default: null,
+    },
+    robots: {
+      type: String,
+      enum: [
+        "index,follow",
+        "noindex,follow",
+        "index,nofollow",
+        "noindex,nofollow",
+      ],
+      default: "index,follow",
+    },
+schemaType: {
+  type: String,
+  enum: ["Course"],
+  default: "Course",
+}
   },
   { _id: false }
 );
@@ -240,6 +319,21 @@ const CourseSchema = new Schema<ICourse>(
       default: [],
     },
 
+    seo: {
+      type: CourseSeoSchema,
+      default: () => ({
+        metaTitle: "",
+        metaDescription: "",
+        keywords: [],
+        canonicalUrl: "",
+        ogTitle: "",
+        ogDescription: "",
+        ogImage: null,
+        robots: "index,follow",
+        schemaType: "Course",
+      }),
+    },
+
     isFeatured: {
       type: Boolean,
       default: false,
@@ -279,6 +373,7 @@ CourseSchema.index({ title: 1 });
 CourseSchema.index({ category: 1, isPublished: 1 });
 CourseSchema.index({ isFeatured: 1, isPublished: 1 });
 CourseSchema.index({ createdAt: -1 });
+CourseSchema.index({ "seo.metaTitle": 1 });
 
 export const CourseModel =
   mongoose.models.Course || model<ICourse>("Course", CourseSchema);

@@ -52,6 +52,53 @@ function toBool(value: unknown, fallback = false) {
   return fallback;
 }
 
+function normalizeKeywords(input: unknown): string[] {
+  if (Array.isArray(input)) {
+    return input.map((item) => String(item).trim()).filter(Boolean);
+  }
+
+  if (typeof input === "string") {
+    return input
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function isAbsoluteUrl(value: unknown) {
+  return /^https?:\/\/.+/i.test(String(value || "").trim());
+}
+
+function parseSeo(value: unknown, slug: string) {
+  const seo = parseObject<any>(value, {});
+  const fallbackCanonical = `https://qmatrixtechnologies.com/blogs/${slug}`;
+
+  const ogImage = seo?.ogImage ? parseObject(seo.ogImage, null) : null;
+
+  return {
+    metaTitle: String(seo?.metaTitle || "").trim(),
+    metaDescription: String(seo?.metaDescription || "").trim(),
+    keywords: normalizeKeywords(seo?.keywords),
+    canonicalUrl: isAbsoluteUrl(seo?.canonicalUrl)
+      ? String(seo.canonicalUrl).trim()
+      : fallbackCanonical,
+    ogTitle: String(seo?.ogTitle || "").trim(),
+    ogDescription: String(seo?.ogDescription || "").trim(),
+    ogImage,
+    robots: [
+      "index,follow",
+      "noindex,follow",
+      "index,nofollow",
+      "noindex,nofollow",
+    ].includes(String(seo?.robots || "").trim())
+      ? String(seo.robots).trim()
+      : "index,follow",
+    schemaType: "Article",
+  };
+}
+
 export async function createBlog(req: Request, res: Response) {
   try {
     const body = req.body ?? {};
@@ -100,6 +147,7 @@ export async function createBlog(req: Request, res: Response) {
       views: Number(body.views) || 0,
       sections: parseArray(body.sections),
       faqs: parseArray(body.faqs),
+      seo: parseSeo(body.seo, finalSlug),
       isPublished,
       publishedAt: isPublished ? body.publishedAt || new Date() : null,
       createdBy: req.user!.uid,
@@ -235,6 +283,7 @@ export async function updateBlog(req: Request, res: Response) {
       ...(body.views !== undefined ? { views: Number(body.views) || 0 } : {}),
       ...(body.sections !== undefined ? { sections: parseArray(body.sections) } : {}),
       ...(body.faqs !== undefined ? { faqs: parseArray(body.faqs) } : {}),
+      ...(body.seo !== undefined ? { seo: parseSeo(body.seo, nextSlug) } : {}),
       isPublished: nextIsPublished,
     };
 
@@ -333,6 +382,7 @@ export async function getBlogBySlug(req: Request, res: Response) {
     });
   }
 }
+
 export async function adminListBlogs(req: Request, res: Response) {
   try {
     const items = await BlogModel.find({})

@@ -1,5 +1,13 @@
 import mongoose, { Schema, model, Types } from "mongoose";
 
+export type SeoRobots =
+  | "index,follow"
+  | "noindex,follow"
+  | "index,nofollow"
+  | "noindex,nofollow";
+
+export type SeoSchemaType = "Article";
+
 const FaqSchema = new Schema(
   {
     question: { type: String, required: true, trim: true },
@@ -44,10 +52,75 @@ const BlogSectionSchema = new Schema(
   { _id: false }
 );
 
+const BlogSeoSchema = new Schema(
+  {
+    metaTitle: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 70,
+    },
+    metaDescription: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 170,
+    },
+    keywords: {
+      type: [String],
+      default: [],
+    },
+    canonicalUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    ogTitle: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 120,
+    },
+    ogDescription: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 220,
+    },
+    ogImage: {
+      type: ImageSchema,
+      default: null,
+    },
+    robots: {
+      type: String,
+      enum: [
+        "index,follow",
+        "noindex,follow",
+        "index,nofollow",
+        "noindex,nofollow",
+      ],
+      default: "index,follow",
+    },
+    schemaType: {
+      type: String,
+      enum: ["Article"],
+      default: "Article",
+    },
+  },
+  { _id: false }
+);
+
 const BlogSchema = new Schema(
   {
     title: { type: String, required: true, trim: true },
-    slug: { type: String, required: true, unique: true, index: true, trim: true },
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      trim: true,
+      lowercase: true,
+    },
 
     excerpt: { type: String, default: "", trim: true },
 
@@ -67,13 +140,33 @@ const BlogSchema = new Schema(
     sections: { type: [BlogSectionSchema], default: [] },
     faqs: { type: [FaqSchema], default: [] },
 
-    isPublished: { type: Boolean, default: false },
+    seo: {
+      type: BlogSeoSchema,
+      default: () => ({
+        metaTitle: "",
+        metaDescription: "",
+        keywords: [],
+        canonicalUrl: "",
+        ogTitle: "",
+        ogDescription: "",
+        ogImage: null,
+        robots: "index,follow",
+        schemaType: "Article",
+      }),
+    },
+
+    isPublished: { type: Boolean, default: false, index: true },
     publishedAt: { type: Date, default: null },
 
     createdBy: { type: Types.ObjectId, ref: "User", required: true },
   },
-  { timestamps: true }
+  { timestamps: true, versionKey: false }
 );
+
+BlogSchema.index({ createdAt: -1 });
+BlogSchema.index({ publishedAt: -1 });
+BlogSchema.index({ isPublished: 1, createdAt: -1 });
+BlogSchema.index({ "seo.metaTitle": 1 });
 
 export const BlogModel =
   mongoose.models.Blog || model("Blog", BlogSchema);
