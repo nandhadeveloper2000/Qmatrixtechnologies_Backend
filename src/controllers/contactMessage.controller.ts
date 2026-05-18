@@ -1,34 +1,113 @@
 import { Request, Response } from "express";
-import { ContactMessageModel } from "../models/contactMessage.model";
+import { env } from "../config/env";
+import {
+  ContactMessageModel,
+  type ContactStatus,
+  type IContactMessage,
+} from "../models/contactMessage.model";
 import {
   sendAdminReplyEmail,
   sendContactAdminNotification,
   sendContactAutoReply,
 } from "../config/contactMailer";
 import {
+  hasUrlLikeContent,
+  isLikelySpamText,
+  isSubmissionTooFast,
+  isValidCountryCode,
   isValidEmail,
+  isValidMessage,
+  isValidName,
   isValidPhone,
+  normalizeCountryCode,
+  normalizeEmail,
+  normalizePhone,
   sanitizeText,
 } from "../utils/contactValidation";
 
+type ContactSummary = {
+  total: number;
+  new: number;
+  in_progress: number;
+  completed: number;
+  closed: number;
+};
+
 function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
+  if (env.NODE_ENV !== "production" && error instanceof Error) {
+    return error.message;
+  }
+
   return "Something went wrong";
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildEmptySummary(total = 0): ContactSummary {
+  return {
+    total,
+    new: 0,
+    in_progress: 0,
+    completed: 0,
+    closed: 0,
+  };
+}
+
+function buildSummary(
+  total: number,
+  grouped: Array<{ _id: ContactStatus; count: number }>
+): ContactSummary {
+  const summary = buildEmptySummary(total);
+
+  for (const item of grouped) {
+    if (item._id in summary) {
+      summary[item._id] = Number(item.count || 0);
+    }
+  }
+
+  return summary;
 }
 
 export async function createContactMessage(req: Request, res: Response) {
   try {
+    const website = sanitizeText(req.body.website);
+    const formStartedAt = req.body.formStartedAt;
     const firstName = sanitizeText(req.body.firstName);
     const lastName = sanitizeText(req.body.lastName);
-    const email = sanitizeText(req.body.email).toLowerCase();
-    const countryCode = sanitizeText(req.body.countryCode || "+91");
-    const phone = sanitizeText(req.body.phone);
+    const email = normalizeEmail(req.body.email);
+    const countryCode = normalizeCountryCode(req.body.countryCode || "+91");
+    const phone = normalizePhone(req.body.phone);
     const message = sanitizeText(req.body.message);
 
-    if (!firstName) {
+    if (website) {
       return res.status(400).json({
         success: false,
-        message: "First name is required",
+        message: "Invalid submission",
+      });
+    }
+
+    if (isSubmissionTooFast(formStartedAt)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please take a moment to complete the form before submitting.",
+      });
+    }
+
+    if (!firstName || !isValidName(firstName) || isLikelySpamText(firstName)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please enter a valid first name using letters only.",
+      });
+    }
+
+    if (lastName && (!isValidName(lastName) || isLikelySpamText(lastName))) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please enter a valid last name using letters only.",
       });
     }
 
@@ -39,6 +118,13 @@ export async function createContactMessage(req: Request, res: Response) {
       });
     }
 
+    if (!countryCode || !isValidCountryCode(countryCode)) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid country code is required",
+      });
+    }
+
     if (!phone || !isValidPhone(phone)) {
       return res.status(400).json({
         success: false,
@@ -46,10 +132,31 @@ export async function createContactMessage(req: Request, res: Response) {
       });
     }
 
-    if (!message || message.length < 5) {
+    if (
+      !message ||
+      !isValidMessage(message) ||
+      hasUrlLikeContent(message)
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Message must be at least 5 characters",
+        message:
+          "Please enter a clear message with at least 10 characters and no links.",
+      });
+    }
+
+    const duplicateThreshold = new Date(Date.now() - 10 * 60 * 1000);
+    const recentDuplicate = await ContactMessageModel.findOne({
+      email,
+      phone,
+      message,
+      createdAt: { $gte: duplicateThreshold },
+    }).lean();
+
+    if (recentDuplicate) {
+      return res.status(429).json({
+        success: false,
+        message:
+          "We already received this message recently. Please wait a few minutes before trying again.",
       });
     }
 
@@ -98,35 +205,57 @@ export async function createContactMessage(req: Request, res: Response) {
 
 export async function getAllContactMessages(req: Request, res: Response) {
   try {
-    const status = sanitizeText(req.query.status);
+    const rawStatus = sanitizeText(req.query.status);
     const search = sanitizeText(req.query.search);
-    const page = Number(req.query.page || 1);
-    const limit = Number(req.query.limit || 10);
+    const page = Math.max(Number(req.query.page || 1) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit || 10) || 10, 1), 50);
     const skip = (page - 1) * limit;
 
-    const query: Record<string, any> = {};
+    const allowedStatuses: ContactStatus[] = [
+      "new",
+      "in_progress",
+      "completed",
+      "closed",
+    ];
 
-    if (status) {
-      query.status = status;
+    if (rawStatus && !allowedStatuses.includes(rawStatus as ContactStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status filter",
+      });
+    }
+
+    const query: Record<string, unknown> = {};
+
+    if (rawStatus) {
+      query.status = rawStatus as ContactStatus;
     }
 
     if (search) {
+      const regex = new RegExp(escapeRegex(search), "i");
+
       query.$or = [
-        { firstName: { $regex: search, $options: "i" } },
-        { lastName: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-        { phone: { $regex: search, $options: "i" } },
-        { message: { $regex: search, $options: "i" } },
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { phone: regex },
+        { message: regex },
       ];
     }
 
-    const [items, total] = await Promise.all([
+    const [items, total, grouped] = await Promise.all([
       ContactMessageModel.find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
       ContactMessageModel.countDocuments(query),
+      ContactMessageModel.aggregate<{ _id: ContactStatus; count: number }>([
+        { $match: query },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
     ]);
+
+    const summary = buildSummary(total, grouped);
 
     return res.status(200).json({
       success: true,
@@ -135,14 +264,16 @@ export async function getAllContactMessages(req: Request, res: Response) {
         page,
         limit,
         total,
-        pages: Math.ceil(total / limit),
+        pages: Math.max(1, Math.ceil(total / limit)),
       },
+      summary,
     });
   } catch (error) {
     console.error("getAllContactMessages error:", error);
     return res.status(500).json({
       success: false,
       message: getErrorMessage(error),
+      summary: buildEmptySummary(),
     });
   }
 }
@@ -179,9 +310,14 @@ export async function updateContactStatus(req: Request, res: Response) {
     const status = sanitizeText(req.body.status);
     const reason = sanitizeText(req.body.reason);
 
-    const allowedStatuses = ["new", "in_progress", "completed", "closed"];
+    const allowedStatuses: ContactStatus[] = [
+      "new",
+      "in_progress",
+      "completed",
+      "closed",
+    ];
 
-    if (!allowedStatuses.includes(status)) {
+    if (!allowedStatuses.includes(status as ContactStatus)) {
       return res.status(400).json({
         success: false,
         message: "Invalid status value",
@@ -224,11 +360,17 @@ export async function replyToContactMessage(req: Request, res: Response) {
     const replyMessage = sanitizeText(req.body.replyMessage);
     const status = sanitizeText(req.body.status || "completed");
     const reason = sanitizeText(req.body.reason);
+    const allowedStatuses: ContactStatus[] = [
+      "new",
+      "in_progress",
+      "completed",
+      "closed",
+    ];
 
-    if (!replyMessage) {
+    if (!replyMessage || replyMessage.length < 10) {
       return res.status(400).json({
         success: false,
-        message: "Reply message is required",
+        message: "Reply message must be at least 10 characters",
       });
     }
 
@@ -248,8 +390,8 @@ export async function replyToContactMessage(req: Request, res: Response) {
     });
 
     item.adminReply = replyMessage;
-    item.status = ["new", "in_progress", "completed", "closed"].includes(status as any)
-      ? (status as any)
+    item.status = allowedStatuses.includes(status as ContactStatus)
+      ? (status as ContactStatus)
       : "completed";
     item.reason = reason;
     item.repliedAt = new Date();

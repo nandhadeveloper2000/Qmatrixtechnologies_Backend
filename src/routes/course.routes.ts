@@ -12,6 +12,7 @@ import {
 } from "../controllers/course.controller";
 import { upload } from "../middlewares/upload.middleware";
 import { requireAuth } from "../middlewares/auth";
+import { validateObjectId } from "../middlewares/objectId.middleware";
 import { requireRole } from "../middlewares/rbac";
 
 const router = Router();
@@ -28,6 +29,7 @@ router.get(
   "/admin/:id",
   requireAuth,
   requireRole("ADMIN", "EDITOR"),
+  validateObjectId(),
   adminGetCourseById
 );
 
@@ -42,6 +44,7 @@ router.put(
   "/:id",
   requireAuth,
   requireRole("ADMIN", "EDITOR"),
+  validateObjectId(),
   updateCourse
 );
 
@@ -49,6 +52,7 @@ router.delete(
   "/:id",
   requireAuth,
   requireRole("ADMIN"),
+  validateObjectId(),
   deleteCourse
 );
 

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { EnquiryModel } from "../models/enquiry.model";
+import { env } from "../config/env";
 
 type EnquiryStatus = "NEW" | "IN_PROGRESS" | "COMPLETED";
 
@@ -39,6 +40,14 @@ function pickLatestNonEmpty(...values: unknown[]): string | null {
     if (value) return value;
   }
   return null;
+}
+
+function getSafeErrorMessage(fallback: string, error?: unknown) {
+  if (env.NODE_ENV !== "production" && error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
 }
 
 /**
@@ -153,7 +162,7 @@ export async function createEnquiry(req: Request, res: Response) {
 
     return res.status(500).json({
       success: false,
-      message: error?.message || "Failed to create enquiry.",
+      message: getSafeErrorMessage("Failed to create enquiry.", error),
     });
   }
 }
@@ -213,7 +222,7 @@ export async function listEnquiries(req: Request, res: Response) {
 
     return res.status(500).json({
       success: false,
-      message: error?.message || "Failed to fetch enquiries.",
+      message: getSafeErrorMessage("Failed to fetch enquiries.", error),
     });
   }
 }
@@ -242,7 +251,7 @@ export async function getEnquiryById(req: Request, res: Response) {
 
     return res.status(500).json({
       success: false,
-      message: error?.message || "Failed to fetch enquiry.",
+      message: getSafeErrorMessage("Failed to fetch enquiry.", error),
     });
   }
 }
@@ -367,7 +376,7 @@ export async function updateEnquiry(req: Request, res: Response) {
 
     return res.status(500).json({
       success: false,
-      message: error?.message || "Failed to update enquiry.",
+      message: getSafeErrorMessage("Failed to update enquiry.", error),
     });
   }
 }
@@ -395,7 +404,7 @@ export async function deleteEnquiry(req: Request, res: Response) {
 
     return res.status(500).json({
       success: false,
-      message: error?.message || "Failed to delete enquiry.",
+      message: getSafeErrorMessage("Failed to delete enquiry.", error),
     });
   }
 }

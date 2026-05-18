@@ -125,7 +125,7 @@ export async function getAdminDashboard(req: Request, res: Response) {
 
     return res.status(500).json({
       success: false,
-      message: error?.message || "Failed to fetch admin dashboard",
+      message: "Failed to fetch admin dashboard",
     });
   }
 }

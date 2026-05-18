@@ -3,10 +3,22 @@ import { env } from "../config/env";
 
 const resend = new Resend(env.RESEND_API_KEY);
 
-const ADMIN_EMAILS = [
-  "qmatrixt@gmail.com",
-  "snandhadeveloper592000@gmail.com",
-];
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function resolveAdminEmails() {
+  if (env.CONTACT_ADMIN_EMAILS.length > 0) {
+    return env.CONTACT_ADMIN_EMAILS;
+  }
+
+  return [env.NODEMAILER_EMAIL];
+}
 
 export async function verifyContactMailer() {
   if (!env.RESEND_API_KEY) {
@@ -16,8 +28,6 @@ export async function verifyContactMailer() {
   if (!env.CONTACT_FROM_EMAIL) {
     throw new Error("CONTACT_FROM_EMAIL is missing");
   }
-
-  console.log("✅ Contact mailer ready");
 }
 
 export async function sendContactAdminNotification(params: {
@@ -31,6 +41,10 @@ export async function sendContactAdminNotification(params: {
   const { firstName, lastName, email, countryCode, phone, message } = params;
 
   const fullName = `${firstName} ${lastName || ""}`.trim();
+  const safeName = escapeHtml(fullName);
+  const safeEmail = escapeHtml(email);
+  const safePhone = escapeHtml(`${countryCode} ${phone}`.trim());
+  const safeMessage = escapeHtml(message).replace(/\n/g, "<br/>");
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;background:#f8fafc;padding:24px;">
@@ -46,19 +60,19 @@ export async function sendContactAdminNotification(params: {
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="padding:10px 0;font-weight:700;color:#0f172a;width:160px;">Name</td>
-            <td style="padding:10px 0;color:#334155;">${fullName}</td>
+            <td style="padding:10px 0;color:#334155;">${safeName}</td>
           </tr>
           <tr>
             <td style="padding:10px 0;font-weight:700;color:#0f172a;">Email</td>
-            <td style="padding:10px 0;color:#334155;">${email}</td>
+            <td style="padding:10px 0;color:#334155;">${safeEmail}</td>
           </tr>
           <tr>
             <td style="padding:10px 0;font-weight:700;color:#0f172a;">Phone</td>
-            <td style="padding:10px 0;color:#334155;">${countryCode} ${phone}</td>
+            <td style="padding:10px 0;color:#334155;">${safePhone}</td>
           </tr>
           <tr>
             <td style="padding:10px 0;font-weight:700;color:#0f172a;vertical-align:top;">Message</td>
-            <td style="padding:10px 0;color:#334155;line-height:1.7;">${message.replace(/\n/g, "<br/>")}</td>
+            <td style="padding:10px 0;color:#334155;line-height:1.7;">${safeMessage}</td>
           </tr>
         </table>
       </div>
@@ -68,7 +82,7 @@ export async function sendContactAdminNotification(params: {
 
   const { data, error } = await resend.emails.send({
     from: env.CONTACT_FROM_EMAIL,
-    to: ADMIN_EMAILS,
+    to: resolveAdminEmails(),
     replyTo: email,
     subject: `New Contact Message from ${fullName}`,
     html,
@@ -85,7 +99,7 @@ ${message}
   });
 
   if (error) {
-    console.error("❌ Admin notification email error:", error);
+    console.error("Admin notification email error:", error);
     throw new Error(error.message || "Failed to send admin notification");
   }
 
@@ -98,6 +112,7 @@ export async function sendContactAutoReply(params: {
 }) {
   const { to, firstName } = params;
   const currentYear = new Date().getFullYear();
+  const safeFirstName = escapeHtml(firstName);
 
   const html = `
   <div style="margin:0;padding:0;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;color:#111827;">
@@ -112,7 +127,7 @@ export async function sendContactAutoReply(params: {
 
         <div style="padding:28px;">
           <p style="margin:0 0 14px 0;font-size:15px;line-height:1.8;color:#475569;">
-            Hi <strong style="color:#111827;">${firstName}</strong>,
+            Hi <strong style="color:#111827;">${safeFirstName}</strong>,
           </p>
 
           <p style="margin:0 0 14px 0;font-size:15px;line-height:1.8;color:#475569;">
@@ -149,7 +164,7 @@ export async function sendContactAutoReply(params: {
   });
 
   if (error) {
-    console.error("❌ Auto reply email error:", error);
+    console.error("Auto reply email error:", error);
     throw new Error(error.message || "Failed to send auto reply");
   }
 
@@ -162,6 +177,8 @@ export async function sendAdminReplyEmail(params: {
   replyMessage: string;
 }) {
   const { to, firstName, replyMessage } = params;
+  const safeFirstName = escapeHtml(firstName);
+  const safeReplyMessage = escapeHtml(replyMessage).replace(/\n/g, "<br/>");
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;background:#f8fafc;padding:24px;">
@@ -170,9 +187,9 @@ export async function sendAdminReplyEmail(params: {
         <h2 style="margin:0;font-size:24px;">Response from QMatrix Technologies</h2>
       </div>
       <div style="padding:28px;">
-        <p style="font-size:15px;line-height:1.8;color:#475569;">Hi <strong style="color:#111827;">${firstName}</strong>,</p>
+        <p style="font-size:15px;line-height:1.8;color:#475569;">Hi <strong style="color:#111827;">${safeFirstName}</strong>,</p>
         <div style="font-size:15px;line-height:1.8;color:#334155;">
-          ${replyMessage.replace(/\n/g, "<br/>")}
+          ${safeReplyMessage}
         </div>
       </div>
     </div>
@@ -188,7 +205,7 @@ export async function sendAdminReplyEmail(params: {
   });
 
   if (error) {
-    console.error("❌ Admin reply email error:", error);
+    console.error("Admin reply email error:", error);
     throw new Error(error.message || "Failed to send reply email");
   }
 

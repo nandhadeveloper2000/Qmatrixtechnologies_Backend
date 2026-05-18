@@ -4,6 +4,8 @@ export interface IOtp extends Document {
   email: string;
   otpHash: string;
   expiresAt: Date;
+  attemptCount: number;
+  lastAttemptAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +26,14 @@ const otpSchema = new Schema<IOtp>(
     expiresAt: {
       type: Date,
       required: true,
+    },
+    attemptCount: {
+      type: Number,
+      default: 0,
+    },
+    lastAttemptAt: {
+      type: Date,
+      default: null,
     },
   },
   {

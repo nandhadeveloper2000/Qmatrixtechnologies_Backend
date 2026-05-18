@@ -8,7 +8,7 @@ const router = Router();
 router.get(
   "/dashboard",
   requireAuth,
-  requireRole("ADMIN", "EDITOR", "USER"),
+  requireRole("ADMIN", "EDITOR"),
   getAdminDashboard
 );
 

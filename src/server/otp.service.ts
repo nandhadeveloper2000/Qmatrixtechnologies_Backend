@@ -1,5 +1,6 @@
 // src/services/otp.service.ts
 import { OtpModel } from "../models/otp.model";
+import { env } from "../config/env";
 import { generateOtp } from "../utils/generateOtp";
 import { hashValue, compareValue } from "../utils/hash";
 
@@ -20,6 +21,8 @@ export async function createOtp(email: string) {
     email: normalizedEmail,
     otpHash,
     expiresAt,
+    attemptCount: 0,
+    lastAttemptAt: null,
   });
 
   return {
@@ -45,9 +48,23 @@ export async function verifyOtp(email: string, otp: string) {
     return { ok: false, message: "OTP expired" };
   }
 
+  if (Number(otpDoc.attemptCount || 0) >= env.OTP_MAX_ATTEMPTS) {
+    await OtpModel.deleteOne({ _id: otpDoc._id });
+    return { ok: false, message: "OTP expired" };
+  }
+
   const isMatch = await compareValue(otp.trim(), otpDoc.otpHash);
 
   if (!isMatch) {
+    otpDoc.attemptCount = Number(otpDoc.attemptCount || 0) + 1;
+    otpDoc.lastAttemptAt = new Date();
+
+    if (otpDoc.attemptCount >= env.OTP_MAX_ATTEMPTS) {
+      await OtpModel.deleteOne({ _id: otpDoc._id });
+      return { ok: false, message: "OTP expired" };
+    }
+
+    await otpDoc.save();
     return { ok: false, message: "Invalid OTP" };
   }
 

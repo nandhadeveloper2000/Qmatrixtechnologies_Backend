@@ -1,5 +1,8 @@
-import { NextFunction, Request, Response } from "express";
+import type { NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
+import multer from "multer";
+import { ZodError } from "zod";
+import { env } from "../config/env";
 import ApiError from "../utils/ApiError";
 
 function getMongooseValidationMessage(
@@ -7,6 +10,14 @@ function getMongooseValidationMessage(
 ): string {
   const firstError = Object.values(error.errors)[0];
   return firstError?.message || "Validation failed";
+}
+
+function getSafeInternalMessage(message: string) {
+  if (env.NODE_ENV === "production") {
+    return "Internal server error";
+  }
+
+  return message || "Internal server error";
 }
 
 export function notFoundHandler(
@@ -23,13 +34,32 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ) {
-  console.error("Global error:", err);
-
   if (err instanceof ApiError) {
     return res.status(err.statusCode).json({
       success: false,
       message: err.message,
       ...(err.details ? { details: err.details } : {}),
+    });
+  }
+
+  if (err instanceof ZodError) {
+    return res.status(400).json({
+      success: false,
+      message: err.issues[0]?.message || "Validation failed",
+      details: err.issues.map((issue) => ({
+        path: issue.path.join("."),
+        message: issue.message,
+      })),
+    });
+  }
+
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({
+      success: false,
+      message:
+        err.code === "LIMIT_FILE_SIZE"
+          ? "Uploaded file exceeds the allowed size limit."
+          : err.message,
     });
   }
 
@@ -43,7 +73,7 @@ export function errorHandler(
   if (err instanceof mongoose.Error.CastError) {
     return res.status(400).json({
       success: false,
-      message: `Invalid ${err.path}: ${err.value}`,
+      message: `Invalid ${err.path}`,
     });
   }
 
@@ -70,8 +100,7 @@ export function errorHandler(
   if (err instanceof Error) {
     return res.status(500).json({
       success: false,
-      message: err.message || "Internal server error",
-      ...(process.env.NODE_ENV !== "production" ? { stack: err.stack } : {}),
+      message: getSafeInternalMessage(err.message),
     });
   }
 

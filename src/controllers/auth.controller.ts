@@ -1,8 +1,6 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { env } from "../config/env";
-import { sendOtpEmail } from "../config/mailer";
-import { UserModel } from "../models/user.model";
-import { OtpModel } from "../models/otp.model";
+import { UserModel, type UserDoc } from "../models/user.model";
 import { normEmail } from "../utils/normalize";
 import { compareValue, hashValue } from "../utils/hash";
 import {
@@ -12,19 +10,11 @@ import {
   type AccessPayload,
 } from "../utils/jwt";
 
-function genOtp() {
-  return String(Math.floor(100000 + Math.random() * 900000));
-}
-
-function otpToHash(email: string, otp: string) {
-  return `${email}:${otp}:${env.OTP_PEPPER}`;
-}
-
 function refreshToHash(refreshToken: string) {
   return `${refreshToken}:${env.REFRESH_PEPPER}`;
 }
 
-function serializeUser(user: any) {
+function serializeUser(user: UserDoc) {
   return {
     uid: String(user._id),
     id: String(user._id),
@@ -35,123 +25,88 @@ function serializeUser(user: any) {
     created_by: user.created_by ?? null,
     avatar_url: user.avatar_url ?? null,
     avatar_public_id: user.avatar_public_id ?? null,
-    token_version: user.token_version,
     created_at: user.created_at ?? null,
     updated_at: user.updated_at ?? null,
   };
 }
 
-export async function requestOtp(req: Request, res: Response) {
+export async function login(req: Request, res: Response) {
   try {
-    if (!env.ENABLE_LOGIN_OTP) {
-      return res.status(400).json({ success: false, message: "OTP disabled" });
-    }
-
     const email = normEmail(req.body?.email);
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email required" });
+    const password = String(req.body?.password ?? "").trim();
+
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Email and password required" });
     }
 
-    let user = await UserModel.findOne({ email });
+    let user = await UserModel.findOne({ email }).select(
+      "+password_hash +refresh_token_hash"
+    );
 
     if (!user && env.MASTER_GOOGLE_EMAILS.includes(email)) {
+      const password_hash = await hashValue(password);
       user = await UserModel.create({
         email,
         name: "Master Admin",
         role: "ADMIN",
         is_active: true,
+        password_hash,
       });
     }
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid credentials" });
+    }
+
+    if (env.MASTER_GOOGLE_EMAILS.includes(email)) {
+      if (user.role !== "ADMIN" || !user.is_active) {
+        user.role = "ADMIN";
+        user.is_active = true;
+      }
     }
 
     if (!user.is_active) {
-      return res.status(403).json({ success: false, message: "User inactive" });
+      return res
+        .status(403)
+        .json({ success: false, message: "User inactive" });
     }
 
-    if (user.role === "USER") {
-      return res.status(403).json({ success: false, message: "Not allowed" });
+    if (!user.password_hash) {
+      if (env.MASTER_GOOGLE_EMAILS.includes(email)) {
+        user.password_hash = await hashValue(password);
+      } else {
+        return res
+          .status(401)
+          .json({ success: false, message: "Invalid credentials" });
+      }
+    } else {
+      const ok = await compareValue(password, user.password_hash);
+
+      if (!ok) {
+        return res
+          .status(401)
+          .json({ success: false, message: "Invalid credentials" });
+      }
     }
 
-    const otp = genOtp();
-    const otpHash = await hashValue(otpToHash(email, otp));
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-    await OtpModel.deleteMany({ email });
-
-    await OtpModel.create({
-      email,
-      otpHash,
-      expiresAt,
-    });
-
-    await sendOtpEmail(email, otp);
-
-    return res.json({ success: true, message: "OTP sent" });
-  } catch (error) {
-    console.error("requestOtp error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to send OTP email",
-    });
-  }
-}
-
-export async function verifyOtp(req: Request, res: Response) {
-  try {
-    const email = normEmail(req.body?.email);
-    const otp = String(req.body?.otp ?? "").trim();
-
-    if (!email || otp.length !== 6) {
-      return res.status(400).json({ success: false, message: "Invalid input" });
-    }
-
-    const user = await UserModel.findOne({ email });
-
-    if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
-    }
-
-    if (!user.is_active) {
-      return res.status(403).json({ success: false, message: "User inactive" });
-    }
-
-    if (user.role === "USER") {
-      return res.status(403).json({ success: false, message: "Not allowed" });
-    }
-
-    const doc = await OtpModel.findOne({ email }).sort({ createdAt: -1 });
-
-    if (!doc) {
-      return res.status(400).json({ success: false, message: "OTP expired" });
-    }
-
-    if (doc.expiresAt.getTime() < Date.now()) {
-      await OtpModel.deleteMany({ email });
-      return res.status(400).json({ success: false, message: "OTP expired" });
-    }
-
-    const ok = await compareValue(otpToHash(email, otp), doc.otpHash);
-
-    if (!ok) {
-      return res.status(401).json({ success: false, message: "Wrong OTP" });
-    }
-
-    await OtpModel.deleteMany({ email });
+    const nextTokenVersion = Number(user.token_version || 0) + 1;
+    user.token_version = nextTokenVersion;
 
     const payload: AccessPayload = {
       uid: String(user._id),
       email: user.email,
       role: user.role,
+      tokenVersion: nextTokenVersion,
     };
 
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
 
     user.refresh_token_hash = await hashValue(refreshToHash(refreshToken));
-    user.token_version = Number(user.token_version || 0);
     await user.save();
 
     return res.json({
@@ -160,12 +115,8 @@ export async function verifyOtp(req: Request, res: Response) {
       refreshToken,
       user: serializeUser(user),
     });
-  } catch (error) {
-    console.error("verifyOtp error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to verify OTP",
-    });
+  } catch {
+    return res.status(500).json({ success: false, message: "Login failed" });
   }
 }
 
@@ -174,10 +125,9 @@ export async function refresh(req: Request, res: Response) {
     const refreshToken = String(req.body?.refreshToken ?? "");
 
     if (!refreshToken) {
-      return res.status(400).json({
-        success: false,
-        message: "Missing refresh token",
-      });
+      return res
+        .status(400)
+        .json({ success: false, message: "Missing refresh token" });
     }
 
     let payload: AccessPayload;
@@ -185,16 +135,31 @@ export async function refresh(req: Request, res: Response) {
     try {
       payload = verifyRefreshToken(refreshToken);
     } catch {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid refresh token",
-      });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid refresh token" });
     }
 
-    const user = await UserModel.findById(payload.uid);
+    if (typeof payload.tokenVersion !== "number") {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid refresh token" });
+    }
+
+    const user = await UserModel.findById(payload.uid).select(
+      "+refresh_token_hash"
+    );
 
     if (!user || !user.is_active) {
-      return res.status(401).json({ success: false, message: "Unauthorized" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Unauthorized" });
+    }
+
+    if (payload.tokenVersion !== Number(user.token_version || 0)) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid refresh token" });
     }
 
     if (!user.refresh_token_hash) {
@@ -207,13 +172,16 @@ export async function refresh(req: Request, res: Response) {
     );
 
     if (!ok) {
-      return res.status(401).json({ success: false, message: "Token mismatch" });
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid refresh token" });
     }
 
     const newPayload: AccessPayload = {
       uid: String(user._id),
       email: user.email,
       role: user.role,
+      tokenVersion: Number(user.token_version || 0),
     };
 
     const newAccess = signAccessToken(newPayload);
@@ -228,34 +196,32 @@ export async function refresh(req: Request, res: Response) {
       refreshToken: newRefresh,
       user: serializeUser(user),
     });
-  } catch (error) {
-    console.error("refresh error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to refresh token",
-    });
+  } catch {
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to refresh token" });
   }
 }
 
 export async function logout(req: Request, res: Response) {
   try {
-    const email = normEmail(req.body?.email);
+    const userId = req.user?.uid;
 
-    if (!email) {
-      return res.status(400).json({ success: false, message: "Email required" });
+    if (!userId) {
+      return res
+        .status(401)
+        .json({ success: false, message: "Unauthorized" });
     }
 
     await UserModel.updateOne(
-      { email },
+      { _id: userId },
       { $set: { refresh_token_hash: null }, $inc: { token_version: 1 } }
     );
 
     return res.json({ success: true, message: "Logged out" });
-  } catch (error) {
-    console.error("logout error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to logout",
-    });
+  } catch {
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to logout" });
   }
 }

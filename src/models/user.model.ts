@@ -8,6 +8,7 @@ export interface IUser {
   role: UserRole;
   is_active: boolean;
 
+  password_hash?: string | null;
   refresh_token_hash?: string | null;
   token_version: number;
 
@@ -46,9 +47,15 @@ const UserSchema = new Schema<IUser>(
       type: Boolean,
       default: true,
     },
+    password_hash: {
+      type: String,
+      default: null,
+      select: false,
+    },
     refresh_token_hash: {
       type: String,
       default: null,
+      select: false,
     },
     token_version: {
       type: Number,

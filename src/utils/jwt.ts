@@ -43,30 +43,19 @@ export function signRefreshToken(payload: AccessPayload) {
 export function verifyAccessToken(token: string): AccessPayload {
   try {
     return jwt.verify(token, env.JWT_ACCESS_SECRET) as AccessPayload;
-  } catch (err: any) {
-    if (err.name === "TokenExpiredError") {
-      throw new Error("ACCESS_TOKEN_EXPIRED");
-    }
-    if (err.name === "JsonWebTokenError") {
-      throw new Error("INVALID_ACCESS_TOKEN");
-    }
+  } catch (err) {
+    if (err instanceof jwt.TokenExpiredError) throw new Error("ACCESS_TOKEN_EXPIRED");
+    if (err instanceof jwt.JsonWebTokenError)  throw new Error("INVALID_ACCESS_TOKEN");
     throw err;
   }
 }
 
-/**
- * Verify Refresh Token
- */
 export function verifyRefreshToken(token: string): AccessPayload {
   try {
     return jwt.verify(token, env.JWT_REFRESH_SECRET) as AccessPayload;
-  } catch (err: any) {
-    if (err.name === "TokenExpiredError") {
-      throw new Error("REFRESH_TOKEN_EXPIRED");
-    }
-    if (err.name === "JsonWebTokenError") {
-      throw new Error("INVALID_REFRESH_TOKEN");
-    }
+  } catch (err) {
+    if (err instanceof jwt.TokenExpiredError) throw new Error("REFRESH_TOKEN_EXPIRED");
+    if (err instanceof jwt.JsonWebTokenError)  throw new Error("INVALID_REFRESH_TOKEN");
     throw err;
   }
 }

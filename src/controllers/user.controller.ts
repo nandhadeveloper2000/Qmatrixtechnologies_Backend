@@ -1,15 +1,35 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import { normEmail } from "../utils/normalize";
-import { UserModel, type UserRole } from "../models/user.model";
+import { UserModel, type UserDoc, type UserRole } from "../models/user.model";
 import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload";
 import { cloudinary } from "../config/cloudinary";
+import { hashValue } from "../utils/hash";
 
 const USER_ROLES: UserRole[] = ["ADMIN", "EDITOR", "USER"];
+const USER_LIST_FIELDS =
+  "_id email name role is_active avatar_url avatar_public_id created_at updated_at";
 
 function isUserRole(value: unknown): value is UserRole {
   return typeof value === "string" && USER_ROLES.includes(value as UserRole);
 }
 
+function serializeUser(user: UserDoc) {
+  return {
+    id: String(user._id),
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    is_active: user.is_active,
+    avatar_url: user.avatar_url ?? null,
+    avatar_public_id: user.avatar_public_id ?? null,
+    created_at: user.created_at ?? null,
+    updated_at: user.updated_at ?? null,
+  };
+}
+
+function resolveTargetUserId(req: Request) {
+  return req.params.id || req.user?.uid || "";
+}
 
 export async function adminListUsers(req: Request, res: Response) {
   try {
@@ -17,21 +37,20 @@ export async function adminListUsers(req: Request, res: Response) {
 
     const filter = q
       ? {
-          $or: [
-            { email: new RegExp(q, "i") },
-            { name: new RegExp(q, "i") },
-          ],
+          $or: [{ email: new RegExp(q, "i") }, { name: new RegExp(q, "i") }],
         }
       : {};
 
-    const items = await UserModel.find(filter).sort({ created_at: -1 });
+    const items = await UserModel.find(filter)
+      .select(USER_LIST_FIELDS)
+      .sort({ created_at: -1 })
+      .lean();
 
     return res.json({
       success: true,
       data: items,
     });
-  } catch (error) {
-    console.error("adminListUsers error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to list users",
@@ -39,11 +58,11 @@ export async function adminListUsers(req: Request, res: Response) {
   }
 }
 
-
 export async function adminCreateUser(req: Request, res: Response) {
   try {
     const email = normEmail(req.body?.email);
     const name = String(req.body?.name || "").trim();
+    const password = String(req.body?.password || "").trim();
     const roleRaw = req.body?.role;
     const is_active =
       typeof req.body?.is_active === "boolean" ? req.body.is_active : true;
@@ -51,11 +70,18 @@ export async function adminCreateUser(req: Request, res: Response) {
     if (!email || !name) {
       return res.status(400).json({
         success: false,
-        message: "email & name required",
+        message: "Email and name are required",
       });
     }
 
-    const role: UserRole = isUserRole(roleRaw) ? roleRaw : "ADMIN";
+    if (password.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 8 characters",
+      });
+    }
+
+    const role: UserRole = isUserRole(roleRaw) ? roleRaw : "USER";
 
     const exists = await UserModel.findOne({ email });
     if (exists) {
@@ -65,27 +91,28 @@ export async function adminCreateUser(req: Request, res: Response) {
       });
     }
 
+    const password_hash = await hashValue(password);
+
     const doc = await UserModel.create({
       email,
       name,
       role,
       is_active,
+      password_hash,
       created_by: req.user?.uid || null,
     });
 
     return res.status(201).json({
       success: true,
-      data: doc,
+      user: serializeUser(doc),
     });
-  } catch (error) {
-    console.error("adminCreateUser error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to create user",
     });
   }
 }
-
 
 export async function adminUpdateUser(req: Request, res: Response) {
   try {
@@ -119,7 +146,14 @@ export async function adminUpdateUser(req: Request, res: Response) {
       update.name = req.body.name.trim();
     }
 
-    if (isUserRole(req.body?.role)) {
+    if (req.body?.role !== undefined) {
+      if (!isUserRole(req.body.role)) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid role",
+        });
+      }
+
       update.role = req.body.role;
     }
 
@@ -127,10 +161,21 @@ export async function adminUpdateUser(req: Request, res: Response) {
       update.is_active = req.body.is_active;
     }
 
-    const doc = await UserModel.findByIdAndUpdate(req.params.id, update, {
-      new: true,
-      runValidators: true,
-    });
+    const password = String(req.body?.password || "").trim();
+    if (password) {
+      if (password.length < 8) {
+        return res.status(400).json({
+          success: false,
+          message: "Password must be at least 8 characters",
+        });
+      }
+
+      update.password_hash = await hashValue(password);
+    }
+
+    const doc = await UserModel.findById(req.params.id).select(
+      USER_LIST_FIELDS + " token_version"
+    );
 
     if (!doc) {
       return res.status(404).json({
@@ -139,21 +184,39 @@ export async function adminUpdateUser(req: Request, res: Response) {
       });
     }
 
+    if (typeof update.name === "string") doc.name = update.name;
+    if (typeof update.email === "string") doc.email = update.email;
+    if (typeof update.role === "string" && isUserRole(update.role)) {
+      doc.role = update.role;
+    }
+    if (typeof update.is_active === "boolean") {
+      doc.is_active = update.is_active;
+    }
+    if (typeof update.password_hash === "string") {
+      doc.password_hash = update.password_hash;
+      doc.refresh_token_hash = null;
+      doc.token_version = Number(doc.token_version || 0) + 1;
+    }
+
+    await doc.save();
+
     return res.json({
       success: true,
-      data: doc,
+      user: serializeUser(doc),
     });
-  } catch (error) {
-    console.error("adminUpdateUser error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to update user",
     });
   }
 }
+
 export async function adminDeleteUser(req: Request, res: Response) {
   try {
-    const doc = await UserModel.findById(req.params.id);
+    const doc = await UserModel.findById(req.params.id).select(
+      "_id avatar_public_id"
+    );
 
     if (!doc) {
       return res.status(404).json({
@@ -172,8 +235,7 @@ export async function adminDeleteUser(req: Request, res: Response) {
       success: true,
       message: "Deleted",
     });
-  } catch (error) {
-    console.error("adminDeleteUser error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to delete user",
@@ -183,9 +245,7 @@ export async function adminDeleteUser(req: Request, res: Response) {
 
 export async function getUserById(req: Request, res: Response) {
   try {
-    const user = await UserModel.findById(req.params.id).select(
-      "_id email name role is_active avatar_url avatar_public_id created_at updated_at"
-    );
+    const user = await UserModel.findById(req.params.id).select(USER_LIST_FIELDS);
 
     if (!user) {
       return res.status(404).json({
@@ -196,20 +256,9 @@ export async function getUserById(req: Request, res: Response) {
 
     return res.json({
       success: true,
-      user: {
-        id: String(user._id),
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        is_active: user.is_active,
-        avatar_url: user.avatar_url ?? null,
-        avatar_public_id: user.avatar_public_id ?? null,
-        created_at: user.created_at ?? null,
-        updated_at: user.updated_at ?? null,
-      },
+      user: serializeUser(user),
     });
-  } catch (error) {
-    console.error("getUserById error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to get user",
@@ -228,9 +277,7 @@ export async function getMyProfile(req: Request, res: Response) {
       });
     }
 
-    const user = await UserModel.findById(userId).select(
-      "_id email name role is_active avatar_url avatar_public_id created_at updated_at"
-    );
+    const user = await UserModel.findById(userId).select(USER_LIST_FIELDS);
 
     if (!user) {
       return res.status(404).json({
@@ -241,20 +288,9 @@ export async function getMyProfile(req: Request, res: Response) {
 
     return res.json({
       success: true,
-      user: {
-        id: String(user._id),
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        is_active: user.is_active,
-        avatar_url: user.avatar_url ?? null,
-        avatar_public_id: user.avatar_public_id ?? null,
-        created_at: user.created_at ?? null,
-        updated_at: user.updated_at ?? null,
-      },
+      user: serializeUser(user),
     });
-  } catch (error) {
-    console.error("getMyProfile error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to get profile",
@@ -262,17 +298,18 @@ export async function getMyProfile(req: Request, res: Response) {
   }
 }
 
-
 export async function updateProfile(req: Request, res: Response) {
   try {
-    const userId = req.params.id;
-    const body = req.body as {
-      name?: unknown;
-      role?: unknown;
-      is_active?: unknown;
-    };
+    const userId = req.user?.uid;
 
-    const user = await UserModel.findById(userId);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const user = await UserModel.findById(userId).select(USER_LIST_FIELDS);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -280,16 +317,8 @@ export async function updateProfile(req: Request, res: Response) {
       });
     }
 
-    if (typeof body.name === "string" && body.name.trim()) {
-      user.name = body.name.trim();
-    }
-
-    if (isUserRole(body.role)) {
-      user.role = body.role;
-    }
-
-    if (typeof body.is_active === "boolean") {
-      user.is_active = body.is_active;
+    if (typeof req.body?.name === "string" && req.body.name.trim()) {
+      user.name = req.body.name.trim();
     }
 
     await user.save();
@@ -297,18 +326,9 @@ export async function updateProfile(req: Request, res: Response) {
     return res.json({
       success: true,
       message: "Profile updated successfully",
-      user: {
-        id: String(user._id),
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        is_active: user.is_active,
-        avatar_url: user.avatar_url ?? null,
-        avatar_public_id: user.avatar_public_id ?? null,
-      },
+      user: serializeUser(user),
     });
-  } catch (error) {
-    console.error("updateProfile error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to update profile",
@@ -318,7 +338,14 @@ export async function updateProfile(req: Request, res: Response) {
 
 export async function uploadAvatar(req: Request, res: Response) {
   try {
-    const userId = req.params.id;
+    const userId = resolveTargetUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
 
     if (!req.file) {
       return res.status(400).json({
@@ -327,7 +354,7 @@ export async function uploadAvatar(req: Request, res: Response) {
       });
     }
 
-    const user = await UserModel.findById(userId);
+    const user = await UserModel.findById(userId).select(USER_LIST_FIELDS);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -351,18 +378,9 @@ export async function uploadAvatar(req: Request, res: Response) {
     return res.json({
       success: true,
       message: "Avatar uploaded successfully",
-      user: {
-        id: String(user._id),
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        is_active: user.is_active,
-        avatar_url: user.avatar_url,
-        avatar_public_id: user.avatar_public_id,
-      },
+      user: serializeUser(user),
     });
-  } catch (error) {
-    console.error("uploadAvatar error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to upload avatar",
@@ -372,9 +390,16 @@ export async function uploadAvatar(req: Request, res: Response) {
 
 export async function deleteAvatar(req: Request, res: Response) {
   try {
-    const userId = req.params.id;
+    const userId = resolveTargetUserId(req);
 
-    const user = await UserModel.findById(userId);
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized",
+      });
+    }
+
+    const user = await UserModel.findById(userId).select(USER_LIST_FIELDS);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -393,18 +418,9 @@ export async function deleteAvatar(req: Request, res: Response) {
     return res.json({
       success: true,
       message: "Avatar deleted successfully",
-      user: {
-        id: String(user._id),
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        is_active: user.is_active,
-        avatar_url: null,
-        avatar_public_id: null,
-      },
+      user: serializeUser(user),
     });
-  } catch (error) {
-    console.error("deleteAvatar error:", error);
+  } catch {
     return res.status(500).json({
       success: false,
       message: "Failed to delete avatar",
