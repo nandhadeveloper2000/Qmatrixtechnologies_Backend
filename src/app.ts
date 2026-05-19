@@ -62,11 +62,35 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use(cookieParser());
-app.use(
-  mongoSanitize({
-    replaceWith: "_",
-  })
-);
+app.use((req, _res, next) => {
+  if (req.body && typeof req.body === "object") {
+    req.body = mongoSanitize.sanitize(req.body, {
+      replaceWith: "_",
+    });
+  }
+
+  if (req.params && typeof req.params === "object") {
+    req.params = mongoSanitize.sanitize(req.params, {
+      replaceWith: "_",
+    });
+  }
+
+  if (req.query && typeof req.query === "object") {
+    const queryObject = req.query as Record<string, unknown>;
+    const sanitizedQuery = mongoSanitize.sanitize(
+      { ...queryObject },
+      { replaceWith: "_" }
+    );
+
+    for (const key of Object.keys(queryObject)) {
+      delete queryObject[key];
+    }
+
+    Object.assign(queryObject, sanitizedQuery);
+  }
+
+  next();
+});
 app.use(hpp());
 
 app.get("/", (_req, res) => {
